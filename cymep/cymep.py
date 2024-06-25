@@ -1,4 +1,4 @@
-import sys
+import os
 import re
 import numpy as np
 import pandas as pd
@@ -6,12 +6,11 @@ import scipy.stats as sps
 from netCDF4 import Dataset
 import warnings
 
-sys.path.insert(0, './functions')
-from getTrajectories import *
-from mask_tc import *
-from track_density import *
-from write_spatial import *
-from pattern_cor import *
+from .functions.getTrajectories import getTrajectories
+from .functions.mask_tc import maskTC, getbasinmaskstr
+from .functions.track_density import track_density, track_mean, track_minmax
+from .functions.write_spatial import write_spatial_netcdf, write_single_csv
+from .functions.pattern_cor import pattern_cor, taylor_stats
 
 #----------------------------------------------------------------------------------------
 ##### User settings
