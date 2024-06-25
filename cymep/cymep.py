@@ -16,7 +16,7 @@ from .functions.pattern_cor import pattern_cor, taylor_stats
 ##### User settings
 
 basin = 1
-csvfilename = 'sens_configs.csv'
+csvfilename = 'rean_configs.csv'
 gridsize = 8.0
 styr = 1900
 enyr = 2100
