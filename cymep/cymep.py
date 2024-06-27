@@ -5,11 +5,12 @@ import pandas as pd
 import scipy.stats as sps
 import warnings
 
-from .functions.getTrajectories import getTrajectories
-from .functions.mask_tc import maskTC, getbasinmaskstr
-from .functions.track_density import track_density, track_mean, track_minmax
-from .functions.write_spatial import write_spatial_netcdf, write_single_csv
-from .functions.pattern_cor import pattern_cor, taylor_stats
+import huracanpy
+
+from functions.mask_tc import maskTC, getbasinmaskstr
+from functions.track_density import track_density, track_mean, track_minmax
+from functions.write_spatial import write_spatial_netcdf, write_single_csv
+from functions.pattern_cor import pattern_cor, taylor_stats
 
 # ----------------------------------------------------------------------------------------
 ##### User settings
@@ -27,7 +28,7 @@ THRESHOLD_PACE_PRES = -100.0  # slp (in hPa) to threshold PACE. Negative means o
 do_special_filter_obs = True  # Special "if" block for first line (control)
 do_fill_missing_pw = True
 do_defineMIbypres = False
-debug_level = 1  # 0 = no debug, 1 = semi-verbose, 2 = very verbose
+debug_level = 0  # 0 = no debug, 1 = semi-verbose, 2 = very verbose
 
 # ----------------------------------------------------------------------------------------
 
@@ -113,65 +114,42 @@ for ii in range(len(files)):
 
     # Extract trajectories from tempest file and assign to arrays
     # USER_MODIFY
-    nstorms, ntimes, ncol, traj_data = getTrajectories(
-        trajfile, nVars, headerStr, isUnstruc
+    tracks = huracanpy.load(
+        trajfile,
+        tracker="tempest",
+        variable_names=["slp", "wind", "unknown"],
+        is_unstructured_grid=isUnstruc,
+        header_delim_str=headerStr,
     )
-    xlon = traj_data[2, :, :]
-    xlat = traj_data[3, :, :]
-    xpres = traj_data[4, :, :] / 100.0
-    xwind = traj_data[5, :, :] * wind_factor
-    xyear = traj_data[ncol - 4, :, :]
-    xmonth = traj_data[ncol - 3, :, :]
-    xday = traj_data[ncol - 2, :, :]
-    xhour = traj_data[ncol - 1, :, :]
-
-    # Initialize nan'ed arrays specific to this traj file
-    xglon = np.empty(nstorms)
-    xglat = np.empty(nstorms)
-    xgmonth = np.empty(nstorms)
-    xgyear = np.empty(nstorms)
-    xgday = np.empty(nstorms)
-    xghour = np.empty(nstorms)
-    xlatmi = np.empty(nstorms)
-    xlonmi = np.empty(nstorms)
-    xglon[:] = np.nan
-    xglat[:] = np.nan
-    xgmonth[:] = np.nan
-    xgyear[:] = np.nan
-    xgday[:] = np.nan
-    xghour[:] = np.nan
-    xlatmi[:] = np.nan
-    xlonmi[:] = np.nan
+    tracks["slp"] = tracks.slp / 100.0
+    tracks["wind"] = tracks.wind * wind_factor
 
     # Fill in missing values of pressure and wind
     if do_fill_missing_pw:
         aaa = 2.3
         bbb = 1010.0
         ccc = 0.76
-        # del xpres
-        # del xwind
-        # xpres = np.array([980.,-1,-1])
-        # xwind = np.array([-1.,30.50281984,-1])
+
         # first, when xpres is missing but xwind exists, try to fill in xpres
-        numfixes_1 = np.count_nonzero((xpres < 0.0) & (xwind > 0.0))
+        numfixes_1 = np.count_nonzero((tracks.slp < 0.0) & (tracks.wind > 0.0))
         # xpres    = np.where(((xpres < 0.0) & (xwind > 0.0)),-1*((xwind/aaa)**(1./ccc)-bbb),xpres)
-        xpres = np.where(
-            ((xpres < 0.0) & (xwind > 0.0)),
-            -1 * (np.sign(xwind / aaa) * (np.abs(xwind / aaa)) ** (1.0 / ccc) - bbb),
-            xpres,
-        )
+        tracks["slp"] = ("record", np.where(
+            ((tracks.slp.data < 0.0) & (tracks.wind.data > 0.0)),
+            -1 * (np.sign(tracks.wind.data / aaa) * (np.abs(tracks.wind.data / aaa)) ** (1.0 / ccc) - bbb),
+            tracks.slp.data,
+        ))
         # next, when xwind is missing but xpres exists, try to fill in xwind
-        numfixes_2 = np.count_nonzero((xwind < 0.0) & (xpres > 0.0))
+        numfixes_2 = np.count_nonzero((tracks.wind < 0.0) & (tracks.slp > 0.0))
         # xwind    = np.where(((xwind < 0.0) & (xpres > 0.0)),aaa*(bbb - xpres)**ccc,xwind)
-        xwind = np.where(
-            ((xwind < 0.0) & (xpres > 0.0)),
-            aaa * np.sign(bbb - xpres) * (np.abs(bbb - xpres)) ** ccc,
-            xwind,
-        )
+        tracks["wind"] = ("record", np.where(
+            ((tracks.wind.data < 0.0) & (tracks.slp.data > 0.0)),
+            aaa * np.sign(bbb - tracks.slp.data) * (np.abs(bbb - tracks.slp.data)) ** ccc,
+            tracks.wind.data,
+        ))
         # now if still missing assume TD
-        numfixes_3 = np.count_nonzero((xpres < 0.0))
-        xpres = np.where((xpres < 0.0), 1008.0, xpres)
-        xwind = np.where((xwind < 0.0), 15.0, xwind)
+        numfixes_3 = np.count_nonzero((tracks.slp < 0.0))
+        tracks.slp[tracks.slp < 0.0] = 1008.0
+        tracks.wind[tracks.wind < 0.0] = 15.0
         print(
             "Num fills for PW "
             + str(numfixes_1)
@@ -189,45 +167,9 @@ for ii in range(len(files)):
     if do_special_filter_obs and ii == 0:
         print("Doing special processing of control file")
         windthreshold = 17.5
-        xlon = np.where(xwind > windthreshold, xlon, float("NaN"))
-        xlat = np.where(xwind > windthreshold, xlat, float("NaN"))
-        xpres = np.where(xwind > windthreshold, xpres, float("NaN"))
-        xwind = np.where(xwind > windthreshold, xwind, float("NaN"))
-        xyear = np.where(xwind > windthreshold, xyear, float("NaN"))
-        xmonth = np.where(xwind > windthreshold, xmonth, float("NaN"))
-
-        # presthreshold=850.0
-        # xlon = np.where(xpres > presthreshold,xlon,float('NaN'))
-        # xlat = np.where(xpres > presthreshold,xlat,float('NaN'))
-        # xpres = np.where(xpres > presthreshold,xpres,float('NaN'))
-        # xwind = np.where(xpres > presthreshold,xwind,float('NaN'))
-
-    # Get genesis location latitude and longitude
-    # Loop over all storms, check for "finite" (non nan) points within that storm's traj
-    for kk, zz in enumerate(range(nstorms)):
-        validlon = xlon[kk, :][np.isfinite(xlon[kk, :])]
-        validlat = xlat[kk, :][np.isfinite(xlat[kk, :])]
-        validmon = xmonth[kk, :][np.isfinite(xmonth[kk, :])]
-        validyear = xyear[kk, :][np.isfinite(xyear[kk, :])]
-        validday = xday[kk, :][np.isfinite(xday[kk, :])]
-        validhour = xhour[kk, :][np.isfinite(xhour[kk, :])]
-        # If the resulting validity array is > 0, it means we have at least 1 non-nan value
-        # Set the genesis information to that first valid point
-        if validlon.size > 0:
-            xglon[kk] = validlon[0]
-            xglat[kk] = validlat[0]
-            xgmonth[kk] = validmon[0]
-            xgyear[kk] = validyear[0]
-            xgday[kk] = validday[0]
-            xghour[kk] = validhour[0]
-
-    # Porting debugging
-    # print(np.count_nonzero(~np.isnan(xglon)))
-    # if ii == 0:
-    #  np.savetxt("foo.csv", xgmonth, delimiter=",")
+        tracks = tracks.where(tracks.wind > windthreshold, drop=True)
 
     ####### MASKING
-
     if debug_level >= 2:
         print("DEBUG2: glat, glon, gmonth, gyear")
         for qq in range(len(xglon)):
@@ -238,72 +180,70 @@ for ii in range(len(files)):
         print("DEBUG1: Storms originally: ", np.sum(~np.isnan(xglon)))
 
     # Mask TCs for particular basin based on genesis location
+    tracks_in_basin = []
     if basin > 0:
-        for kk, zz in enumerate(range(nstorms)):
+        for track_id, track in tracks.groupby("track_id"):
             if basin == 20 or basin == 21:
-                test_basin = maskTC(xglat[kk], xglon[kk], dohemi=True)
+                test_basin = maskTC(track.lat[0], track.lon[0], dohemi=True)
             else:
-                test_basin = maskTC(xglat[kk], xglon[kk])
-            if test_basin != basin:
-                xlon[kk, :] = float("NaN")
-                xlat[kk, :] = float("NaN")
-                xpres[kk, :] = float("NaN")
-                xwind[kk, :] = float("NaN")
-                xyear[kk, :] = float("NaN")
-                xmonth[kk, :] = float("NaN")
-                xglon[kk] = float("NaN")
-                xglat[kk] = float("NaN")
-                xgmonth[kk] = float("NaN")
-                xgyear[kk] = float("NaN")
-                xgday[kk] = float("NaN")
-                xghour[kk] = float("NaN")
+                test_basin = maskTC(track.lat[0], track.lon[0])
+            if test_basin == basin:
+                tracks_in_basin.append(track_id)
+
+    tracks = tracks.where(tracks.track_id.isin(tracks_in_basin), drop=True)
 
     if debug_level >= 1:
         print("DEBUG1: Storms after basin filter: ", np.sum(~np.isnan(xglon)))
 
     # Mask TCs based on temporal characteristics
-    for kk, zz in enumerate(range(nstorms)):
-        maskoff = True
-        if not np.isnan(xglat[kk]):
-            maskoff = False
-            orimon = xgmonth[kk]
-            oriyear = xgyear[kk]
-            if enmon <= stmon:
-                if orimon > enmon and orimon < stmon:
-                    maskoff = True
-            else:
-                if orimon < stmon or orimon > enmon:
-                    maskoff = True
-            if truncate_years:
-                if oriyear < styr or oriyear > enyr:
-                    maskoff = True
-        if maskoff:
-            xlon[kk, :] = float("NaN")
-            xlat[kk, :] = float("NaN")
-            xpres[kk, :] = float("NaN")
-            xwind[kk, :] = float("NaN")
-            xyear[kk, :] = float("NaN")
-            xmonth[kk, :] = float("NaN")
-            xglon[kk] = float("NaN")
-            xglat[kk] = float("NaN")
-            xgmonth[kk] = float("NaN")
-            xgyear[kk] = float("NaN")
-            xgday[kk] = float("NaN")
-            xghour[kk] = float("NaN")
+    tracks_to_keep = []
+    for track_id, track in tracks.groupby("track_id"):
+        maskoff = False
+        orimon = track.time.dt.month[0]
+        oriyear = track.time.dt.year[0]
+        # End month < start month. Account for wrap around in years
+        if enmon <= stmon:
+            if enmon < orimon < stmon:
+                maskoff = True
+        else:
+            if orimon < stmon or orimon > enmon:
+                maskoff = True
+        if truncate_years:
+            if oriyear < styr or oriyear > enyr:
+                maskoff = True
+
+        if not maskoff:
+            tracks_to_keep.append(track_id)
+
+    tracks = tracks.where(tracks.track_id.isin(tracks_to_keep), drop=True)
 
     if debug_level >= 1:
         print("DEBUG1: Storms after time filter: ", np.sum(~np.isnan(xglon)))
     #########################################
 
+    # Initialize nan'ed arrays specific to this traj file
+    nstorms = len(set(tracks.track_id.data))
+    origin = tracks.groupby("track_id").first()
+    xglon = origin.lon.data
+    xglat = origin.lat.data
+    xgmonth = origin.time.dt.month.data
+    xgyear = origin.time.dt.year.data
+    xgday = origin.time.dt.day.data
+    xghour = origin.time.dt.hour.data
+    xlatmi = np.empty(nstorms)
+    xlonmi = np.empty(nstorms)
+
+    xlatmi[:] = np.nan
+    xlonmi[:] = np.nan
+
     # Calculate LMI
-    for kk, zz in enumerate(range(nstorms)):
-        if not np.isnan(xglat[kk]):
-            if do_defineMIbypres:
-                locMI = np.nanargmin(xpres[kk, :])
-            else:
-                locMI = np.nanargmax(xwind[kk, :])
-            xlatmi[kk] = xlat[kk, locMI]
-            xlonmi[kk] = xlon[kk, locMI]
+    for kk, (track_id, track) in enumerate(tracks.groupby("track_id")):
+        if do_defineMIbypres:
+            locMI = track.slp.argmin()
+        else:
+            locMI = track.wind.argmax()
+        xlatmi[kk] = track.lat.isel(record=locMI)
+        xlonmi[kk] = track.lon.isel(record=locMI)
 
     # Flip LMI sign in SH to report poleward values when averaging
     abs_lats = True
@@ -312,21 +252,25 @@ for ii in range(len(files)):
         # xglat  = np.absolute(xglat)
 
     # Calculate TC days at every valid track point
-    xtcdpp = xwind
+    # Assuming 6-hourly data
+    xtcdpp = tracks.wind
     xtcdpp = np.where(~np.isnan(xtcdpp), 0.25, 0)
 
     # Calculate storm-accumulated ACE
-    tmp = xwind
+    xacepp = 1.0e-4 * (ms_to_kts * tracks.wind) ** 2.0
     if THRESHOLD_ACE_WIND > 0:
         print("Thresholding ACE to only TCs > " + str(THRESHOLD_ACE_WIND) + " m/s")
-        tmp = np.where(xwind < THRESHOLD_ACE_WIND, float("NaN"), xwind)
-    xacepp = 1.0e-4 * (ms_to_kts * tmp) ** 2.0
-    xace = np.nansum(xacepp, axis=1)
+        xacepp[tracks.wind < THRESHOLD_ACE_WIND] = np.nan
+
+    tracks["xacepp"] = xacepp
+    xace = np.empty(nstorms)
+    for kk, (track_id, track) in enumerate(tracks.groupby("track_id")):
+        xace[kk] = np.nansum(track.xacepp)
 
     # Calculate storm-accumulated PACE
     quadratic_fit = True
     calcPolyFitPACE = True
-    xprestmp = xpres
+    xprestmp = tracks.slp.data
 
     # Threshold PACE if requested
     if THRESHOLD_PACE_PRES > 0:
@@ -342,9 +286,9 @@ for ii in range(len(files)):
                 polyn = 2
                 xprestmp = np.ma.where(xprestmp < 1010.0, xprestmp, 1010.0)
                 xprestmp = 1010.0 - xprestmp
-                idx = np.isfinite(xprestmp) & np.isfinite(xwind)
+                idx = np.isfinite(xprestmp) & np.isfinite(tracks.wind)
                 quad_a = np.polyfit(
-                    xprestmp[idx].flatten(), xwind[idx].flatten(), polyn
+                    xprestmp[idx].flatten(), tracks.wind[idx].data, polyn
                 )
         else:  # Use the coefficients from Z2021
             print("calcPolyFitPACE is False, using coefficients from Z2021")
@@ -355,16 +299,16 @@ for ii in range(len(files)):
         print(quad_a * ms_to_kts)
         xwindtmp = (
             quad_a[2]
-            + quad_a[1] * (1010.0 - xpres)
-            + quad_a[0] * ((1010.0 - xpres) ** 2)
+            + quad_a[1] * (1010.0 - tracks.slp.data)
+            + quad_a[0] * ((1010.0 - tracks.slp.data) ** 2)
         )
         xpacepp = 1.0e-4 * (ms_to_kts * xwindtmp) ** 2.0
 
         if debug_level >= 2:
             # Flatten the 2-D arrays
             xwindtmp_flat = xwindtmp.flatten()
-            xwind_flat = xwind.flatten()
-            xpres_flat = xpres.flatten()
+            xwind_flat = track.wind.flatten()
+            xpres_flat = track.slp.flatten()
             # Print the flattened values in sets of three
             for ss in range(len(xwindtmp_flat)):
                 if not (
@@ -380,12 +324,18 @@ for ii in range(len(files)):
         xpacepp = 1.0e-4 * (ms_to_kts * 2.3 * (1010.0 - xprestmp) ** 0.76) ** 2.0
 
     # Calculate PACE from xpacepp
-    xpace = np.nansum(xpacepp, axis=1)
+    tracks["xpacepp"] = ("record", xpacepp)
+    xpace = np.empty(nstorms)
 
     # Get maximum intensity and TCD
-    xmpres = np.nanmin(xpres, axis=1)
-    xmwind = np.nanmax(xwind, axis=1)
-    xtcd = np.nansum(xtcdpp, axis=1)
+    xmpres = np.empty(nstorms)
+    xmwind = np.empty(nstorms)
+    xtcd = np.empty(nstorms)
+    for kk, (track_id, track) in enumerate(tracks.groupby("track_id")):
+        xpace[kk] = np.nansum(track.xpacepp)
+        xmpres[kk] = track.slp.data.min()
+        xmwind[kk] = track.wind.data.max()
+        xtcd[kk] = len(track.time) / 4
 
     # Need to get rid of storms with no TC, ACE or PACE
     xtcd = np.where(xtcd == 0, float("NaN"), xtcd)
@@ -494,30 +444,30 @@ for ii in range(len(files)):
 
     # Calculate spatial densities, integrals, and min/maxes
     trackdens, denslat, denslon = track_density(
-        gridsize, 0.0, xlat.flatten(), xlon.flatten(), False
+        gridsize, 0.0, tracks.lat.data, tracks.lon.data, False
     )
     trackdens = trackdens / nmodyears
     gendens, denslat, denslon = track_density(
-        gridsize, 0.0, xglat.flatten(), xglon.flatten(), False
+        gridsize, 0.0, xglat, xglon, False
     )
     gendens = gendens / nmodyears
     tcddens, denslat, denslon = track_mean(
-        gridsize, 0.0, xlat.flatten(), xlon.flatten(), xtcdpp.flatten(), False, 0
+        gridsize, 0.0, tracks.lat.data, tracks.lon.data, xtcdpp, False, 0
     )
     tcddens = tcddens / nmodyears
     acedens, denslat, denslon = track_mean(
-        gridsize, 0.0, xlat.flatten(), xlon.flatten(), xacepp.flatten(), False, 0
+        gridsize, 0.0, tracks.lat.data, tracks.lon.data, xacepp.data, False, 0
     )
     acedens = acedens / nmodyears
     pacedens, denslat, denslon = track_mean(
-        gridsize, 0.0, xlat.flatten(), xlon.flatten(), xpacepp.flatten(), False, 0
+        gridsize, 0.0, tracks.lat.data, tracks.lon.data, xpacepp.data, False, 0
     )
     pacedens = pacedens / nmodyears
     minpres, denslat, denslon = track_minmax(
-        gridsize, 0.0, xlat.flatten(), xlon.flatten(), xpres.flatten(), "min", -1
+        gridsize, 0.0, tracks.lat.data, tracks.lon.data, tracks.slp.data, "min", -1
     )
     maxwind, denslat, denslon = track_minmax(
-        gridsize, 0.0, xlat.flatten(), xlon.flatten(), xwind.flatten(), "max", -1
+        gridsize, 0.0, tracks.lat.data, tracks.lon.data, tracks.wind.data, "max", -1
     )
 
     # If there are no storms tracked in this particular dataset, set everything to NaN
