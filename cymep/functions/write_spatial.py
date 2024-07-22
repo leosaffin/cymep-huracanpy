@@ -1,5 +1,3 @@
-import numpy as np
-import netCDF4 as nc
 from datetime import datetime
 import os
 
@@ -13,7 +11,7 @@ def write_spatial_netcdf(
     taydict,
     modelsin,
     years,
-    nmonths,
+    months,
     latin,
     lonin,
     globaldict,
@@ -34,8 +32,8 @@ def write_spatial_netcdf(
             model=modelsin,
             lat=latin,
             lon=lonin,
-            months=range(nmonths),
-            years=years,
+            month=months,
+            year=years,
         )
     )
 

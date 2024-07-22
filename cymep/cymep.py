@@ -134,7 +134,11 @@ def main():
     nfiles = len(files)
     years = list(range(styr, enyr+1))
     nyears = enyr - styr + 1
-    nmonths = enmon - stmon + 1
+    if enmon < stmon:
+        months = list(range(stmon, 12 + 1)) + list(range(1, enmon + 1))
+    else:
+        months = list(range(stmon, enmon + 1))
+    nmonths = len(months)
 
     # Initialize global numpy array/dicts
     pydict, pmdict, aydict, asdict = initialise_arrays(nfiles, nyears, nmonths)
@@ -327,19 +331,19 @@ def main():
         )
 
         # Bin storms per dataset per calendar month
-        for jj in range(1, 12 + 1):
-            pmdict["pm_count"][ii, jj - 1] = np.count_nonzero(xgmonth == jj) / nmodyears
-            pmdict["pm_tcd"][ii, jj - 1] = (
-                np.nansum(np.where(xgmonth == jj, xtcd, 0.0)) / nmodyears
+        for jj, month in enumerate(months):
+            pmdict["pm_count"][ii, jj] = np.count_nonzero(xgmonth == month) / nmodyears
+            pmdict["pm_tcd"][ii, jj] = (
+                np.nansum(np.where(xgmonth == month, xtcd, 0.0)) / nmodyears
             )
-            pmdict["pm_ace"][ii, jj - 1] = (
-                np.nansum(np.where(xgmonth == jj, xace, 0.0)) / nmodyears
+            pmdict["pm_ace"][ii, jj] = (
+                np.nansum(np.where(xgmonth == month, xace, 0.0)) / nmodyears
             )
-            pmdict["pm_pace"][ii, jj - 1] = (
-                np.nansum(np.where(xgmonth == jj, xpace, 0.0)) / nmodyears
+            pmdict["pm_pace"][ii, jj] = (
+                np.nansum(np.where(xgmonth == month, xpace, 0.0)) / nmodyears
             )
-            pmdict["pm_lmi"][ii, jj - 1] = np.nanmean(
-                np.where(xgmonth == jj, xlatmi, float("NaN"))
+            pmdict["pm_lmi"][ii, jj] = np.nanmean(
+                np.where(xgmonth == month, xlatmi, float("NaN"))
             )
 
         # Bin storms per dataset per calendar year
@@ -576,8 +580,6 @@ def main():
 
     # Package a series of global package inputs for storage as NetCDF attributes
     globaldict = dict(
-        stmon=stmon,
-        enmon=enmon,
         strbasin=strbasin,
         do_special_filter_obs=str(do_special_filter_obs),
         do_fill_missing_pw=str(do_fill_missing_pw),
@@ -589,7 +591,7 @@ def main():
 
     # Write NetCDF file
     write_spatial_netcdf(
-        msdict, pmdict, pydict, taydict, strs, years, nmonths, denslat, denslon, globaldict
+        msdict, pmdict, pydict, taydict, strs, years, months, denslat, denslon, globaldict
     )
 
 
