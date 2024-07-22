@@ -3,6 +3,8 @@ import netCDF4 as nc
 from datetime import datetime
 import os
 
+import xarray as xr
+
 
 def write_spatial_netcdf(
     spatialdict,
@@ -10,21 +12,12 @@ def write_spatial_netcdf(
     peryrdict,
     taydict,
     modelsin,
-    nyears,
+    years,
     nmonths,
     latin,
     lonin,
     globaldict,
 ):
-    # Convert modelsin from pandas to list
-    modelsin = modelsin.tolist()
-
-    # Set up dimensions
-    nmodels = len(modelsin)
-    nlats = latin.size
-    nlons = lonin.size
-    nchar = 16
-
     netcdfdir = "./netcdf-files/"
     os.makedirs(os.path.dirname(netcdfdir), exist_ok=True)
     netcdfile = (
@@ -36,133 +29,63 @@ def write_spatial_netcdf(
     )
 
     # open a netCDF file to write
-    ncout = nc.Dataset(netcdfile + ".nc", "w", format="NETCDF4")
-
-    # define axis size
-    ncout.createDimension("model", nmodels)  # unlimited
-    ncout.createDimension("lat", nlats)
-    ncout.createDimension("lon", nlons)
-    ncout.createDimension("characters", nchar)
-    ncout.createDimension("months", nmonths)
-    ncout.createDimension("years", nyears)
+    dsout = xr.Dataset(
+        coords=dict(
+            model=modelsin,
+            lat=latin,
+            lon=lonin,
+            months=range(nmonths),
+            years=years,
+        )
+    )
 
     # create latitude axis
-    lat = ncout.createVariable("lat", "f", ("lat"))
-    lat.standard_name = "latitude"
-    lat.long_name = "latitude"
-    lat.units = "degrees_north"
-    lat.axis = "Y"
+    dsout["lat"].attrs = dict(
+        standard_name="latitude",
+        long_name="latitude",
+        units="degrees_north",
+        axis="Y",
+    )
 
-    # create longitude axis
-    lon = ncout.createVariable("lon", "f", ("lon"))
-    lon.standard_name = "longitude"
-    lon.long_name = "longitude"
-    lon.units = "degrees_east"
-    lon.axis = "X"
-
-    # Write lon + lat
-    lon[:] = lonin[:]
-    lat[:] = latin[:]
+    dsout["lon"].attrs = dict(
+        standard_name="longitude",
+        long_name="longitude",
+        units="degrees_east",
+        axis="X",
+    )
 
     # create variable arrays
     # Do spatial variables
-    for ii in spatialdict:
-        vout = ncout.createVariable(ii, "f", ("model", "lat", "lon"), fill_value=1e20)
-        # vout.long_name = 'density'
-        # vout.units = '1/year'
-        vout[:] = np.ma.masked_invalid(spatialdict[ii][:, :, :])
-
-    # create variable array
-    for ii in permondict:
-        vout = ncout.createVariable(ii, "f", ("model", "months"), fill_value=1e20)
-        vout[:] = np.ma.masked_invalid(permondict[ii][:, :])
-
-    # create variable array
-    for ii in peryrdict:
-        vout = ncout.createVariable(ii, "f", ("model", "years"), fill_value=1e20)
-        vout[:] = np.ma.masked_invalid(peryrdict[ii][:, :])
-
-    # create variable array
-    for ii in taydict:
-        vout = ncout.createVariable(ii, "f", ("model"), fill_value=1e20)
-        vout[:] = np.ma.masked_invalid(taydict[ii][:])
-
-    # Write model names to char
-    model_names = ncout.createVariable("model_names", "c", ("model", "characters"))
-    model_names[:] = nc.stringtochar(np.array(modelsin).astype("S16"))
+    for vardict, coords in [
+        (spatialdict, ["model", "lat", "lon"]),
+        (permondict, ["model", "months"]),
+        (peryrdict, ["model", "years"]),
+        (taydict, "model")
+    ]:
+        for ii in vardict:
+            dsout[ii] = (coords, vardict[ii])
 
     # today = datetime.today()
-    ncout.description = "Coastal metrics processed data"
-    ncout.history = "Created " + datetime.today().strftime("%Y-%m-%d-%H:%M:%S")
-    for ii in globaldict:
-        ncout.setncattr(ii, str(globaldict[ii]))
+    dsout.attrs = globaldict
+    dsout.attrs["description"] = "Coastal metrics processed data"
+    dsout.attrs["history"] = "Created " + datetime.today().strftime("%Y-%m-%d-%H:%M:%S")
 
-    # close files
-    ncout.close()
+    dsout.to_netcdf(netcdfile + "_new.nc")
 
 
-def write_dict_csv(vardict, modelsin):
-    # create variable array
-    csvdir = "./csv-files/"
-    os.makedirs(os.path.dirname(csvdir), exist_ok=True)
-    for ii in vardict:
-        csvfilename = csvdir + "/" + str(ii) + ".csv"
-        if vardict[ii].shape == modelsin.shape:
-            tmp = np.concatenate(
-                (np.expand_dims(modelsin, axis=1), np.expand_dims(vardict[ii], axis=1)),
-                axis=1,
-            )
-        else:
-            tmp = np.concatenate(
-                (np.expand_dims(modelsin, axis=1), vardict[ii]), axis=1
-            )
-        np.savetxt(csvfilename, tmp, delimiter=",", fmt="%s")
-
-
-def write_single_csv(vardict, modelsin, csvdir, csvname):
+def write_single_csv(vardicts, modelsin, csvdir, csvname):
     # create variable array
     os.makedirs(os.path.dirname(csvdir), exist_ok=True)
     csvfilename = csvdir + "/" + csvname
 
-    # If a single line CSV with one model
-    if np.isscalar(modelsin):
-        tmp = np.empty((1, len(vardict)))
-        headerstr = "Model"
-        iterix = 0
-        for ii in vardict:
-            headerstr = headerstr + "," + ii
-            tmp[0, iterix] = vardict[ii]
-            iterix += 1
+    dsout = xr.Dataset(
+        coords=dict(
+            model=modelsin
+        )
+    )
 
-        # Create a dummy numpy string array of "labels" with the control name to append as column #1
-        labels = np.empty((1, 1), dtype="<U10")
-        labels[:] = modelsin
-        # Stack labels and numpy dict arrays horizontally as non-header data
-        tmp = np.hstack((labels, tmp))
+    for vardict in vardicts:
+        for varname in vardict:
+            dsout[varname] = ("model", vardict[varname])
 
-    # Else, the more common outcome; 2-D arrays
-    else:
-        # Concat models to first axis
-        firstdict = list(vardict.keys())[0]
-        headerstr = "Model," + firstdict
-
-        if vardict[firstdict].shape == modelsin.shape:
-            tmp = np.concatenate(
-                (
-                    np.expand_dims(modelsin, axis=1),
-                    np.expand_dims(vardict[firstdict], axis=1),
-                ),
-                axis=1,
-            )
-        else:
-            tmp = np.concatenate(
-                (np.expand_dims(modelsin, axis=1), vardict[firstdict]), axis=1
-            )
-
-        for ii in vardict:
-            if ii != firstdict:
-                tmp = np.concatenate((tmp, np.expand_dims(vardict[ii], axis=1)), axis=1)
-                headerstr = headerstr + "," + ii
-
-    # Write header + data array
-    np.savetxt(csvfilename, tmp, delimiter=",", fmt="%s", header=headerstr, comments="")
+    dsout.to_netcdf(csvfilename.replace(".csv", ".nc"))
