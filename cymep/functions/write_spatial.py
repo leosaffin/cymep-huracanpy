@@ -30,8 +30,8 @@ def write_spatial_netcdf(
     dsout = xr.Dataset(
         coords=dict(
             model=modelsin,
-            lat=latin,
-            lon=lonin,
+            lat=0.5 * (latin[:-1] + latin[1:]),
+            lon=0.5 * (lonin[:-1] + lonin[1:]),
             month=months,
             year=years,
         )

@@ -9,7 +9,7 @@ import warnings
 import huracanpy
 
 from functions.mask_tc import maskTC, getbasinmaskstr, fill_missing_pressure_wind
-from functions.track_density import track_density, track_mean, track_minmax
+from functions.track_density import track_density, track_mean, track_minmax, create_grid
 from functions.write_spatial import write_spatial_netcdf, write_single_csv
 from functions.pattern_cor import pattern_cor, taylor_stats
 
@@ -35,13 +35,11 @@ debug_level = 0  # 0 = no debug, 1 = semi-verbose, 2 = very verbose
 
 # Constants
 ms_to_kts = 1.94384449
-pi = 3.141592653589793
-deg2rad = pi / 180.0
 
 # --------------------------------------------------------------------------------------
 
 
-def initialise_arrays(nfiles, nyears, nmonths):
+def initialise_arrays(nfiles, nyears, nmonths, denslon, denslat):
     # Init per year arrays
     pydict = {
         var: np.full([nfiles, nyears], np.nan) for var in
@@ -66,7 +64,31 @@ def initialise_arrays(nfiles, nyears, nmonths):
         ["utc_tcd", "utc_ace", "utc_pace", "utc_latgen", "utc_lmi"]
     }
 
-    return pydict, pmdict, aydict, asdict
+    # generate master spatial arrays
+    msdict = {
+        var: np.empty((nfiles, denslat.size - 1, denslon.size - 1)) for var in
+        [
+            "fulldens",
+            "fullpres",
+            "fullwind",
+            "fullgen",
+            "fullace",
+            "fullpace",
+            "fulltcd",
+            "fulltrackbias",
+            "fullgenbias",
+            "fullacebias",
+            "fullpacebias",
+        ]
+    }
+
+    # Initialize dict
+    rxydict = {
+        var: np.empty(nfiles) for var in
+        ["rxy_track", "rxy_gen", "rxy_u10", "rxy_slp", "rxy_ace", "rxy_pace"]
+    }
+
+    return pydict, pmdict, aydict, asdict, msdict, rxydict
 
 
 def filter_tracks(tracks, special_filter_obs, basin):
@@ -140,8 +162,15 @@ def main():
         months = list(range(stmon, enmon + 1))
     nmonths = len(months)
 
+    # Generate grid for spatial patterns
+    lonstart = 0.0
+    denslon, denslat = create_grid(gridsize, lonstart)
+    denslatwgt = np.cos(np.deg2rad(0.5 * (denslat[:-1] + denslat[1:])))
+
     # Initialize global numpy array/dicts
-    pydict, pmdict, aydict, asdict = initialise_arrays(nfiles, nyears, nmonths)
+    pydict, pmdict, aydict, asdict, msdict, rxydict = initialise_arrays(
+        nfiles, nyears, nmonths, denslon, denslat
+    )
 
     # Get basin string
     strbasin = getbasinmaskstr(basin)
@@ -175,6 +204,7 @@ def main():
         )
         tracks["slp"] = tracks.slp / 100.0
         tracks["wind"] = tracks.wind * windcorrs[ii]
+        tracks["lon"] = tracks.lon % 360
 
         # Fill in missing values of pressure and wind
         if do_fill_missing_pw:
@@ -218,11 +248,6 @@ def main():
         if abs_lats:
             xlatmi = np.absolute(xlatmi)
             # xglat  = np.absolute(xglat)
-
-        # Calculate TC days at every valid track point
-        # Assuming 6-hourly data
-        xtcdpp = tracks.wind
-        xtcdpp = np.where(~np.isnan(xtcdpp), 0.25, 0)
 
         # Calculate storm-accumulated ACE
         xacepp = 1.0e-4 * (ms_to_kts * tracks.wind) ** 2.0
@@ -393,31 +418,27 @@ def main():
         asdict["utc_latgen"][ii] = np.nanmean(np.absolute(xglat))
 
         # Calculate spatial densities, integrals, and min/maxes
-        trackdens, denslat, denslon = track_density(
-            gridsize, 0.0, tracks.lat.data, tracks.lon.data, False
+        trackdens = track_density(
+            tracks.lat.data, tracks.lon.data, denslat, denslon, False
+        ) / nmodyears
+
+        gendens = track_density(xglat, xglon, denslat, denslon, False) / nmodyears
+
+        tcddens = trackdens * 0.25
+
+        acedens = track_mean(
+            tracks.lat.data, tracks.lon.data, denslat, denslon, xacepp.data, False, 0
+        ) / nmodyears
+
+        pacedens = track_mean(
+            tracks.lat.data, tracks.lon.data, denslat, denslon, xpacepp.data, False, 0
+        ) / nmodyears
+
+        minpres = track_minmax(
+            tracks.lat.data, tracks.lon.data, denslat, denslon, tracks.slp.data, min,
         )
-        trackdens = trackdens / nmodyears
-        gendens, denslat, denslon = track_density(
-            gridsize, 0.0, xglat, xglon, False
-        )
-        gendens = gendens / nmodyears
-        tcddens, denslat, denslon = track_mean(
-            gridsize, 0.0, tracks.lat.data, tracks.lon.data, xtcdpp, False, 0
-        )
-        tcddens = tcddens / nmodyears
-        acedens, denslat, denslon = track_mean(
-            gridsize, 0.0, tracks.lat.data, tracks.lon.data, xacepp.data, False, 0
-        )
-        acedens = acedens / nmodyears
-        pacedens, denslat, denslon = track_mean(
-            gridsize, 0.0, tracks.lat.data, tracks.lon.data, xpacepp.data, False, 0
-        )
-        pacedens = pacedens / nmodyears
-        minpres, denslat, denslon = track_minmax(
-            gridsize, 0.0, tracks.lat.data, tracks.lon.data, tracks.slp.data, "min", -1
-        )
-        maxwind, denslat, denslon = track_minmax(
-            gridsize, 0.0, tracks.lat.data, tracks.lon.data, tracks.wind.data, "max", -1
+        maxwind = track_minmax(
+            tracks.lat.data, tracks.lon.data, denslat, denslon, tracks.wind.data, max,
         )
 
         # If there are no storms tracked in this particular dataset, set everything to NaN
@@ -429,28 +450,6 @@ def main():
             gendens = float("NaN")
             minpres = float("NaN")
             maxwind = float("NaN")
-
-        # If ii = 0, generate master spatial arrays
-        if ii == 0:
-            print("Generating cosine weights...")
-            denslatwgt = np.cos(deg2rad * denslat)
-            print("Generating master spatial arrays...")
-            msdict = {}
-            msvars = [
-                "fulldens",
-                "fullpres",
-                "fullwind",
-                "fullgen",
-                "fullace",
-                "fullpace",
-                "fulltcd",
-                "fulltrackbias",
-                "fullgenbias",
-                "fullacebias",
-                "fullpacebias",
-            ]
-            for x in msvars:
-                msdict[x] = np.empty((nfiles, denslat.size, denslon.size))
 
         # Store this model's data in the master spatial array
         msdict["fulldens"][ii, :, :] = trackdens[:, :]
@@ -467,23 +466,8 @@ def main():
 
         print("-------------------------------------------------------------------------")
 
-
-    ### Back to the main program
-
-    # for zz in pydict:
-    #  print(pydict[zz])
-    #  pydict[zz] = np.where( pydict[zz] <= 0.     , 0. , pydict[zz] )
-    #  pydict[zz] = np.where( np.isnan(pydict[zz]) , 0. , pydict[zz] )
-    #  pydict[zz] = np.where( np.isinf(pydict[zz]) , 0. , pydict[zz] )
-
+    # Back to the main program
     # Spatial correlation calculations
-
-    ## Initialize dict
-    rxydict = {}
-    rxyvars = ["rxy_track", "rxy_gen", "rxy_u10", "rxy_slp", "rxy_ace", "rxy_pace"]
-    for x in rxyvars:
-        rxydict[x] = np.empty(nfiles)
-
     for ii in range(nfiles):
         rxydict["rxy_track"][ii] = pattern_cor(
             msdict["fulldens"][0, :, :], msdict["fulldens"][ii, :, :], denslatwgt, 0

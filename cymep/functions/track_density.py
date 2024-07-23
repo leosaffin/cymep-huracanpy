@@ -1,15 +1,8 @@
 import numpy as np
 
 
-def track_density(gridsize, lonstart, clat, clon, setzeros):
-    # =================== Error checking ==================================
-    if clat.size != clon.size:
-        print("ERROR in track_density")
-        print("clat size is " + str(clat.size) + " but clon size is " + str(clon.size))
-        quit()
-
+def create_grid(gridsize, lonstart):
     # =================== Create grid ==================================
-
     latS = -90.0
     latN = 90.0
     lonW = lonstart
@@ -19,154 +12,65 @@ def track_density(gridsize, lonstart, clat, clon, setzeros):
     dlon = gridsize
 
     nlat = int((latN - latS) / dlat) + 1
-    mlon = int((lonE - lonW) / dlon)
+    mlon = int((lonE - lonW) / dlon) + 1
 
     lat = np.linspace(latS, latN, num=nlat)
-    lon = np.linspace(lonW, lonE - dlon, num=mlon)
+    lon = np.linspace(lonW, lonE, num=mlon)
 
-    countarr = np.empty((nlat, mlon))
-    # countarr[:] = np.nan
+    return lon, lat
 
-    # =================== Count data ==================================
 
-    countarr[:] = 0
-    jl = 0
-    il = 0
+def track_density(clat, clon, glat, glon, setzeros):
+    countarr, y, x = np.histogram2d(clat, clon, bins=[glat, glon])
 
-    npts = clat.size
-
-    for nn, zz in enumerate(range(npts)):
-        if ~np.isnan(clon[nn]):
-            jl = int((clat[nn] - latS) / dlat)
-            il = int((clon[nn] - lonW) / dlon)
-            if il > (mlon - 1):
-                print("mlon needs correcting at: " + str(il))
-                il = 0
-            countarr[jl, il] = countarr[jl, il] + 1
-
-    print(
-        "count: min="
-        + str(int(np.nanmin(countarr)))
-        + "   max="
-        + str(int(np.nanmax(countarr)))
-    )
-    print("count: sum=" + str(int(np.nansum(countarr))))
+    print(f"count: min={int(np.nanmin(countarr))}   max={int(np.nanmax(countarr))}")
+    print(f"count: sum={int(np.nansum(countarr))}")
 
     if setzeros:
-        countarr = np.where(countarr == 0, float("NaN"), countarr)
+        countarr = np.where(countarr == 0, np.nan, countarr)
 
-    return countarr, lat, lon
+    return countarr
 
 
-def track_mean(gridsize, lonstart, clat, clon, cvar, meanornot, minhits):
-    # =================== Create grid ==================================
+def track_mean(clat, clon, glat, glon, cvar, meanornot, minhits):
+    xidx = np.digitize(clon, glon) - 1
+    yidx = np.digitize(clat, glat) - 1
 
-    latS = -90.0
-    latN = 90.0
-    lonW = lonstart
-    lonE = lonstart + 360.0
-
-    dlat = gridsize
-    dlon = gridsize
-
-    nlat = int((latN - latS) / dlat) + 1
-    mlon = int((lonE - lonW) / dlon)
-
-    lat = np.linspace(latS, latN, num=nlat)
-    lon = np.linspace(lonW, lonE - dlon, num=mlon)
-
-    countarr = np.empty((nlat, mlon))
-    cumulative = np.empty((nlat, mlon))
+    countarr = np.zeros((len(glat) - 1, len(glon) - 1))
+    cumulative = np.zeros((len(glat) - 1, len(glon) - 1))
 
     # =================== Count data ==================================
-
-    countarr[:] = 0
-    cumulative[:] = 0
-    jl = 0
-    il = 0
-
-    npts = clat.size
-
-    for nn, zz in enumerate(range(npts)):
-        if ~np.isnan(clon[nn]):
-            jl = int((clat[nn] - latS) / dlat)
-            il = int((clon[nn] - lonW) / dlon)
-            if il > (mlon - 1):
-                print("mlon needs correcting at: " + str(il))
-                il = 0
-            countarr[jl, il] = countarr[jl, il] + 1
-            cumulative[jl, il] = cumulative[jl, il] + cvar[nn]
+    for nn, (jl, il) in enumerate(zip(yidx, xidx)):
+        countarr[jl, il] = countarr[jl, il] + 1
+        cumulative[jl, il] = cumulative[jl, il] + cvar[nn]
 
     # set to nan if cumulative less than the specified number of min hits
-    cumulative = np.where(countarr < minhits, float("NaN"), cumulative)
+    cumulative = np.where(countarr < minhits, np.nan, cumulative)
 
     if meanornot:
         # Normalize by dividing by count
-        countarr = np.where(countarr == 0, float("NaN"), countarr)
+        countarr = np.where(countarr == 0, np.nan, countarr)
         cumulative = cumulative / countarr
 
-    # print("count: min="+str(int(np.nanmin(countarr)))+"   max="+str(int(np.nanmax(countarr))))
-    # print("count: sum="+str(int(np.nansum(countarr))))
-    print(
-        "cumulative: min="
-        + str(np.nanmin(cumulative))
-        + "   max="
-        + str(np.nanmax(cumulative))
-    )
-    print("cumulative: sum=" + str(np.nansum(cumulative)))
+    print(f"cumulative: min={np.nanmin(cumulative)}   max={np.nanmax(cumulative)}")
+    print(f"cumulative: sum={np.nansum(cumulative)}")
 
-    return cumulative, lat, lon
+    return cumulative
 
 
-def track_minmax(gridsize, lonstart, clat, clon, cvar, minmax, minhits):
-    # =================== Create grid ==================================
+def track_minmax(clat, clon, glat, glon, cvar, statistic):
+    xidx = np.digitize(clon, glon) - 1
+    yidx = np.digitize(clat, glat) - 1
 
-    latS = -90.0
-    latN = 90.0
-    lonW = lonstart
-    lonE = lonstart + 360.0
-
-    dlat = gridsize
-    dlon = gridsize
-
-    nlat = int((latN - latS) / dlat) + 1
-    mlon = int((lonE - lonW) / dlon)
-
-    lat = np.linspace(latS, latN, num=nlat)
-    lon = np.linspace(lonW, lonE - dlon, num=mlon)
-
-    countarr = np.empty((nlat, mlon))
+    countarr = np.full((len(glat) - 1, len(glon) - 1), np.nan)
 
     # =================== Count data ==================================
+    for nn, (jl, il) in enumerate(zip(yidx, xidx)):
+        if np.isnan(countarr[jl, il]):
+            countarr[jl, il] = cvar[nn]
+        else:
+            countarr[jl, il] = statistic(countarr[jl, il], cvar[nn])
 
-    countarr[:] = np.nan
-    jl = 0
-    il = 0
+    print(f"count: min={np.nanmin(countarr)}  max={np.nanmax(countarr)}")
 
-    npts = clat.size
-
-    for nn, zz in enumerate(range(npts)):
-        if ~np.isnan(clon[nn]):
-            jl = int((clat[nn] - latS) / dlat)
-            il = int((clon[nn] - lonW) / dlon)
-            if il > (mlon - 1):
-                print("mlon needs correcting at: " + str(il))
-                il = 0
-
-            if ~np.isnan(cvar[nn]):
-                if np.isnan(countarr[jl, il]):
-                    countarr[jl, il] = cvar[nn]
-                else:
-                    if cvar[nn] > countarr[jl, il] and minmax == "max":
-                        countarr[jl, il] = cvar[nn]
-                    elif cvar[nn] < countarr[jl, il] and minmax == "min":
-                        countarr[jl, il] = cvar[nn]
-                    else:
-                        # This means we have a valid cvar but a countarr value exists that is more extreme
-                        pass
-
-    print(
-        "count: min=" + str(np.nanmin(countarr)) + "   max=" + str(np.nanmax(countarr))
-    )
-
-    return countarr, lat, lon
+    return countarr
