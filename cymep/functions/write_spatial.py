@@ -68,7 +68,7 @@ def write_spatial_netcdf(
     dsout.attrs["description"] = "Coastal metrics processed data"
     dsout.attrs["history"] = "Created " + datetime.today().strftime("%Y-%m-%d-%H:%M:%S")
 
-    dsout.to_netcdf(netcdfile + "_new.nc")
+    dsout.to_netcdf(netcdfile + ".nc")
 
 
 def write_single_csv(vardicts, modelsin, csvdir, csvname):
