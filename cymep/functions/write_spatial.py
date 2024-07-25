@@ -56,8 +56,8 @@ def write_spatial_netcdf(
     # Do spatial variables
     for vardict, coords in [
         (spatialdict, ["model", "lat", "lon"]),
-        (permondict, ["model", "months"]),
-        (peryrdict, ["model", "years"]),
+        (permondict, ["model", "month"]),
+        (peryrdict, ["model", "year"]),
         (taydict, "model")
     ]:
         for ii in vardict:

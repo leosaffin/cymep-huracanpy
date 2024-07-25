@@ -8,6 +8,10 @@ def test_all():
     ds_old = xr.open_dataset("../cymep/netcdf-files/netcdf_NATL_rean_configs_old.nc")
     ds = xr.open_dataset("../cymep/netcdf-files/netcdf_NATL_rean_configs.nc")
 
+    ds_old["months"] = ds_old.month
+    ds_old["years"] = ds_old.year
+    ds_old = ds_old.drop(["month", "year"])
+    ds_old = ds_old.rename(months="month", years="year")
     del ds_old.attrs["history"]
     del ds.attrs["history"]
     assert ds_old.identical(ds)
