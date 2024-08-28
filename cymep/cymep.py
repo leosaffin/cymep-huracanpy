@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 import scipy.stats as sps
-import warnings
 
 import huracanpy
 
@@ -24,8 +23,8 @@ enyr = 2019
 stmon = 1
 enmon = 12
 truncate_years = False
-THRESHOLD_ACE_WIND = -1.0  # wind speed (in m/s) to threshold ACE. Negative means off.
-THRESHOLD_PACE_PRES = -100.0  # slp (in hPa) to threshold PACE. Negative means off.
+THRESHOLD_ACE_WIND = None  # wind speed (in m/s) to threshold ACE. None means off.
+THRESHOLD_PACE_PRES = None  # slp (in hPa) to threshold PACE. None means off.
 do_special_filter_obs = True  # Special "if" block for first line (control)
 do_fill_missing_pw = True
 do_defineMIbypres = False
@@ -33,41 +32,36 @@ debug_level = 0  # 0 = no debug, 1 = semi-verbose, 2 = very verbose
 
 # --------------------------------------------------------------------------------------
 
-# Constants
-ms_to_kts = 1.94384449
-
-# --------------------------------------------------------------------------------------
-
 
 def initialise_arrays(nfiles, nyears, nmonths, denslon, denslat):
     # Init per year arrays
     pydict = {
-        var: np.full([nfiles, nyears], np.nan) for var in
-        ["py_count", "py_tcd", "py_ace", "py_pace", "py_latgen", "py_lmi"]
+        var: np.full([nfiles, nyears], np.nan)
+        for var in ["py_count", "py_tcd", "py_ace", "py_pace", "py_latgen", "py_lmi"]
     }
 
     # Init per month arrays
     pmdict = {
-        var: np.full((nfiles, nmonths), np.nan) for var in
-        ["pm_count", "pm_tcd", "pm_ace", "pm_pace", "pm_lmi"]
+        var: np.full((nfiles, nmonths), np.nan)
+        for var in ["pm_count", "pm_tcd", "pm_ace", "pm_pace", "pm_lmi"]
     }
 
     # Average by year arrays
     aydict = {
-        var: np.full(nfiles, np.nan) for var in
-        ["uclim_count", "uclim_tcd", "uclim_ace", "uclim_pace", "uclim_lmi"]
+        var: np.full(nfiles, np.nan)
+        for var in ["uclim_count", "uclim_tcd", "uclim_ace", "uclim_pace", "uclim_lmi"]
     }
 
     # Average by storm arrays
     asdict = {
-        var: np.full(nfiles, np.nan) for var in
-        ["utc_tcd", "utc_ace", "utc_pace", "utc_latgen", "utc_lmi"]
+        var: np.full(nfiles, np.nan)
+        for var in ["utc_tcd", "utc_ace", "utc_pace", "utc_latgen", "utc_lmi"]
     }
 
     # generate master spatial arrays
     msdict = {
-        var: np.empty((nfiles, denslat.size - 1, denslon.size - 1)) for var in
-        [
+        var: np.empty((nfiles, denslat.size - 1, denslon.size - 1))
+        for var in [
             "fulldens",
             "fullpres",
             "fullwind",
@@ -84,8 +78,8 @@ def initialise_arrays(nfiles, nyears, nmonths, denslon, denslat):
 
     # Initialize dict
     rxydict = {
-        var: np.empty(nfiles) for var in
-        ["rxy_track", "rxy_gen", "rxy_u10", "rxy_slp", "rxy_ace", "rxy_pace"]
+        var: np.empty(nfiles)
+        for var in ["rxy_track", "rxy_gen", "rxy_u10", "rxy_slp", "rxy_ace", "rxy_pace"]
     }
 
     return pydict, pmdict, aydict, asdict, msdict, rxydict
@@ -154,7 +148,7 @@ def main():
 
     # Get some useful global values based on input data
     nfiles = len(files)
-    years = list(range(styr, enyr+1))
+    years = list(range(styr, enyr + 1))
     nyears = enyr - styr + 1
     if enmon < stmon:
         months = list(range(stmon, 12 + 1)) + list(range(1, enmon + 1))
@@ -250,82 +244,36 @@ def main():
             # xglat  = np.absolute(xglat)
 
         # Calculate storm-accumulated ACE
-        xacepp = 1.0e-4 * (ms_to_kts * tracks.wind) ** 2.0
-        if THRESHOLD_ACE_WIND > 0:
-            print("Thresholding ACE to only TCs > " + str(THRESHOLD_ACE_WIND) + " m/s")
-            xacepp[tracks.wind < THRESHOLD_ACE_WIND] = np.nan
+        xace = huracanpy.diags.track_stats.ace_by_track(
+            tracks, tracks.wind, threshold=THRESHOLD_ACE_WIND, keep_ace_by_point=True
+        ).values
 
-        tracks["xacepp"] = xacepp
-        xace = np.empty(nstorms)
-        for kk, (track_id, track) in enumerate(tracks.groupby("track_id")):
-            xace[kk] = np.nansum(track.xacepp)
-
-        # Calculate storm-accumulated PACE
-        quadratic_fit = True
-        calcPolyFitPACE = True
-        xprestmp = tracks.slp.data
-
-        # Threshold PACE if requested
-        if THRESHOLD_PACE_PRES > 0:
-            print("Thresholding PACE to only TCs < " + str(THRESHOLD_PACE_PRES) + " hPa")
-            xprestmp = np.where(xprestmp > THRESHOLD_PACE_PRES, float("NaN"), xprestmp)
-
-        xprestmp = np.ma.array(xprestmp, mask=np.isnan(xprestmp))
-        warnings.filterwarnings("ignore")
-        if quadratic_fit:
-            if calcPolyFitPACE:
-                # Here, we calculate a quadratic P/W fit based off of the "control"
-                if ii == 0:
-                    polyn = 2
-                    xprestmp = np.ma.where(xprestmp < 1010.0, xprestmp, 1010.0)
-                    xprestmp = 1010.0 - xprestmp
-                    idx = np.isfinite(xprestmp) & np.isfinite(tracks.wind)
-                    quad_a = np.polyfit(
-                        xprestmp[idx].flatten(), tracks.wind[idx].data, polyn
-                    )
-            else:  # Use the coefficients from Z2021
-                print("calcPolyFitPACE is False, using coefficients from Z2021")
-                quad_a = np.array([-1.05371378e-03, 5.68356519e-01, 1.43290190e01])
-            print("m/s")
-            print(quad_a)
-            print("kts")
-            print(quad_a * ms_to_kts)
-            xwindtmp = (
-                quad_a[2]
-                + quad_a[1] * (1010.0 - tracks.slp.data)
-                + quad_a[0] * ((1010.0 - tracks.slp.data) ** 2)
+        # Calculate PACE
+        # Calculate the coefficients of the fit for the reference data and then apply
+        # these coefficients to the other datasets
+        if ii == 0:
+            xpace, pw_model = huracanpy.diags.track_stats.pace_by_track(
+                tracks,
+                tracks.slp,
+                wind=tracks.wind,
+                threshold_pressure=THRESHOLD_PACE_PRES,
+                keep_pace_by_point=True,
             )
-            xpacepp = 1.0e-4 * (ms_to_kts * xwindtmp) ** 2.0
-
-            if debug_level >= 2:
-                # Flatten the 2-D arrays
-                xwindtmp_flat = xwindtmp.flatten()
-                xwind_flat = track.wind.flatten()
-                xpres_flat = track.slp.flatten()
-                # Print the flattened values in sets of three
-                for ss in range(len(xwindtmp_flat)):
-                    if not (
-                        np.isnan(xwindtmp_flat[ss])
-                        and np.isnan(xwind_flat[ss])
-                        and np.isnan(xpres_flat[ss])
-                    ):
-                        print("DEBUG2: ", xwindtmp_flat[ss], xwind_flat[ss], xpres_flat[ss])
-
         else:
-            # Here, we apply a predetermined PW relationship from Holland
-            xprestmp = np.ma.where(xprestmp < 1010.0, xprestmp, 1010.0)
-            xpacepp = 1.0e-4 * (ms_to_kts * 2.3 * (1010.0 - xprestmp) ** 0.76) ** 2.0
-
-        # Calculate PACE from xpacepp
-        tracks["xpacepp"] = ("record", xpacepp)
-        xpace = np.empty(nstorms)
+            xpace, _ = huracanpy.diags.track_stats.pace_by_track(
+                tracks,
+                tracks.slp,
+                model=pw_model,
+                threshold_pressure=THRESHOLD_PACE_PRES,
+                keep_pace_by_point=True,
+            )
+        xpace = xpace.values
 
         # Get maximum intensity and TCD
         xmpres = np.empty(nstorms)
         xmwind = np.empty(nstorms)
         xtcd = np.empty(nstorms)
         for kk, (track_id, track) in enumerate(tracks.groupby("track_id")):
-            xpace[kk] = np.nansum(track.xpacepp)
             xmpres[kk] = track.slp.data.min()
             xmwind[kk] = track.wind.data.max()
             xtcd[kk] = len(track.time) / 4
@@ -396,12 +344,14 @@ def main():
 
         # Calculate control interannual standard deviations
         if ii == 0:
-            stdydict = {"sdy_count": [np.nanstd(pydict["py_count"][ii, :])],
-                        "sdy_tcd": [np.nanstd(pydict["py_tcd"][ii, :])],
-                        "sdy_ace": [np.nanstd(pydict["py_ace"][ii, :])],
-                        "sdy_pace": [np.nanstd(pydict["py_pace"][ii, :])],
-                        "sdy_lmi": [np.nanstd(pydict["py_lmi"][ii, :])],
-                        "sdy_latgen": [np.nanstd(pydict["py_latgen"][ii, :])]}
+            stdydict = {
+                "sdy_count": [np.nanstd(pydict["py_count"][ii, :])],
+                "sdy_tcd": [np.nanstd(pydict["py_tcd"][ii, :])],
+                "sdy_ace": [np.nanstd(pydict["py_ace"][ii, :])],
+                "sdy_pace": [np.nanstd(pydict["py_pace"][ii, :])],
+                "sdy_lmi": [np.nanstd(pydict["py_lmi"][ii, :])],
+                "sdy_latgen": [np.nanstd(pydict["py_latgen"][ii, :])],
+            }
 
         # Calculate annual averages
         aydict["uclim_count"][ii] = np.nansum(pmdict["pm_count"][ii, :])
@@ -418,27 +368,56 @@ def main():
         asdict["utc_latgen"][ii] = np.nanmean(np.absolute(xglat))
 
         # Calculate spatial densities, integrals, and min/maxes
-        trackdens = track_density(
-            tracks.lat.data, tracks.lon.data, denslat, denslon, False
-        ) / nmodyears
+        trackdens = (
+            track_density(tracks.lat.data, tracks.lon.data, denslat, denslon, False)
+            / nmodyears
+        )
 
         gendens = track_density(xglat, xglon, denslat, denslon, False) / nmodyears
 
         tcddens = trackdens * 0.25
 
-        acedens = track_mean(
-            tracks.lat.data, tracks.lon.data, denslat, denslon, xacepp.data, False, 0
-        ) / nmodyears
+        acedens = (
+            track_mean(
+                tracks.lat.data,
+                tracks.lon.data,
+                denslat,
+                denslon,
+                tracks.ace.data,
+                False,
+                0,
+            )
+            / nmodyears
+        )
 
-        pacedens = track_mean(
-            tracks.lat.data, tracks.lon.data, denslat, denslon, xpacepp.data, False, 0
-        ) / nmodyears
+        pacedens = (
+            track_mean(
+                tracks.lat.data,
+                tracks.lon.data,
+                denslat,
+                denslon,
+                tracks.pace.data,
+                False,
+                0,
+            )
+            / nmodyears
+        )
 
         minpres = track_minmax(
-            tracks.lat.data, tracks.lon.data, denslat, denslon, tracks.slp.data, min,
+            tracks.lat.data,
+            tracks.lon.data,
+            denslat,
+            denslon,
+            tracks.slp.data,
+            min,
         )
         maxwind = track_minmax(
-            tracks.lat.data, tracks.lon.data, denslat, denslon, tracks.wind.data, max,
+            tracks.lat.data,
+            tracks.lon.data,
+            denslat,
+            denslon,
+            tracks.wind.data,
+            max,
         )
 
         # If there are no storms tracked in this particular dataset, set everything to NaN
@@ -459,12 +438,16 @@ def main():
         msdict["fulltcd"][ii, :, :] = tcddens[:, :]
         msdict["fullpres"][ii, :, :] = minpres[:, :]
         msdict["fullwind"][ii, :, :] = maxwind[:, :]
-        msdict["fulltrackbias"][ii, :, :] = trackdens[:, :] - msdict["fulldens"][0, :, :]
+        msdict["fulltrackbias"][ii, :, :] = (
+            trackdens[:, :] - msdict["fulldens"][0, :, :]
+        )
         msdict["fullgenbias"][ii, :, :] = gendens[:, :] - msdict["fullgen"][0, :, :]
         msdict["fullacebias"][ii, :, :] = acedens[:, :] - msdict["fullace"][0, :, :]
         msdict["fullpacebias"][ii, :, :] = pacedens[:, :] - msdict["fullpace"][0, :, :]
 
-        print("-------------------------------------------------------------------------")
+        print(
+            "-------------------------------------------------------------------------"
+        )
 
     # Back to the main program
     # Spatial correlation calculations
@@ -575,7 +558,16 @@ def main():
 
     # Write NetCDF file
     write_spatial_netcdf(
-        msdict, pmdict, pydict, taydict, strs, years, months, denslat, denslon, globaldict
+        msdict,
+        pmdict,
+        pydict,
+        taydict,
+        strs,
+        years,
+        months,
+        denslat,
+        denslon,
+        globaldict,
     )
 
 
