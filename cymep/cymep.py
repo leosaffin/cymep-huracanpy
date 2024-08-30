@@ -1,7 +1,8 @@
 import os
 import re
+import yaml
+
 import numpy as np
-import pandas as pd
 import xarray as xr
 import scipy.stats as sps
 
@@ -11,26 +12,6 @@ from functions.mask_tc import maskTC, getbasinmaskstr, fill_missing_pressure_win
 from functions.track_density import track_density, track_mean, track_minmax, create_grid
 from functions.write_spatial import write_spatial_netcdf, write_single_csv
 from functions.pattern_cor import pattern_cor, taylor_stats
-
-# --------------------------------------------------------------------------------------
-# User settings
-
-basin = 1
-csvfilename = "rean_configs.csv"
-gridsize = 8.0
-styr = 1980
-enyr = 2019
-stmon = 1
-enmon = 12
-truncate_years = False
-THRESHOLD_ACE_WIND = None  # wind speed (in m/s) to threshold ACE. None means off.
-THRESHOLD_PACE_PRES = None  # slp (in hPa) to threshold PACE. None means off.
-do_special_filter_obs = True  # Special "if" block for first line (control)
-do_fill_missing_pw = True
-do_defineMIbypres = False
-debug_level = 0  # 0 = no debug, 1 = semi-verbose, 2 = very verbose
-
-# --------------------------------------------------------------------------------------
 
 
 def initialise_arrays(nfiles, nyears, nmonths, denslon, denslat):
@@ -85,7 +66,7 @@ def initialise_arrays(nfiles, nyears, nmonths, denslon, denslat):
     return pydict, pmdict, aydict, asdict, msdict, rxydict
 
 
-def filter_tracks(tracks, special_filter_obs, basin):
+def filter_tracks(tracks, special_filter_obs, basin, stmon, enmon, styr, enyr, truncate_years):
     # if "control" record and do_special_filter_obs = true, we can apply specific
     # criteria here to match objective tracks better
     # for example, ibtracs includes tropical depressions, eliminate these to get WMO
@@ -134,31 +115,24 @@ def filter_tracks(tracks, special_filter_obs, basin):
 
 
 def main():
-    print("****** " + "./config-lists/" + csvfilename)
-
-    # Read in configuration file and parse columns for each case
-    # Ignore commented lines starting with !
-    df = pd.read_csv("./config-lists/" + csvfilename, sep=",", comment="!", header=None)
-    files = df.loc[:, 0]
-    strs = np.array(df.loc[:, 1]).astype("U16")
-    isUnstructStr = df.loc[:, 2]
-    ensmembers = df.loc[:, 3]
-    yearspermember = df.loc[:, 4]
-    windcorrs = df.loc[:, 5]
+    # Read in configuration file
+    with open("example_config.yaml") as f:
+        configs = yaml.safe_load(f)
 
     # Get some useful global values based on input data
-    nfiles = len(files)
-    years = list(range(styr, enyr + 1))
-    nyears = enyr - styr + 1
-    if enmon < stmon:
-        months = list(range(stmon, 12 + 1)) + list(range(1, enmon + 1))
+    models = list(configs["models"].keys())
+    nfiles = len(models)
+    years = list(range(configs["styr"], configs["enyr"] + 1))
+    nyears = len(years)
+    if configs["enmon"] < configs["stmon"]:
+        months = list(range(configs["stmon"], 12 + 1)) + list(range(1, configs["enmon"] + 1))
     else:
-        months = list(range(stmon, enmon + 1))
+        months = list(range(configs["stmon"], configs["enmon"] + 1))
     nmonths = len(months)
 
     # Generate grid for spatial patterns
     lonstart = 0.0
-    denslon, denslat = create_grid(gridsize, lonstart)
+    denslon, denslat = create_grid(configs["gridsize"], lonstart)
     denslatwgt = np.cos(np.deg2rad(0.5 * (denslat[:-1] + denslat[1:])))
 
     # Initialize global numpy array/dicts
@@ -167,49 +141,43 @@ def main():
     )
 
     # Get basin string
-    strbasin = getbasinmaskstr(basin)
+    strbasin = getbasinmaskstr(configs["basin"])
 
-    for ii in range(len(files)):
+    for ii, (model, model_config) in enumerate(configs["models"].items()):
         print("-----------------------------------------------------------------------")
-        print(files[ii])
-
-        if files[ii][0] == "/":
-            print("First character is /, using absolute path")
-            trajfile = files[ii]
-        else:
-            trajfile = "trajs/" + files[ii]
+        print(model_config["filename"])
 
         # Determine the number of model years available in our dataset
-        if truncate_years:
+        if configs["truncate_years"]:
             # print("Truncating years from "+yearspermember(zz)+" to "+nyears)
-            nmodyears = ensmembers[ii] * nyears
+            nmodyears = model_config["ensmembers"] * nyears
         else:
             # print("Using years per member of "+yearspermember(zz))
-            nmodyears = ensmembers[ii] * yearspermember[ii]
+            nmodyears = model_config["ensmembers"] * model_config["yearspermember"]
 
         # Extract trajectories from tempest file and assign to arrays
         # USER_MODIFY
         tracks = huracanpy.load(
-            trajfile,
-            tracker="tempest",
-            variable_names=["slp", "wind", "unknown"],
-            tempest_extremes_unstructured=isUnstructStr[ii],
-            tempest_extremes_header_str="start",
+            "trajs/" + model_config["filename"],
+            **{**configs["load_keywords"], **model_config["load_keywords"]}
         )
         tracks["slp"] = tracks.slp / 100.0
-        tracks["wind"] = tracks.wind * windcorrs[ii]
+        tracks["wind"] = tracks.wind * model_config["windcorrs"]
         tracks["lon"] = tracks.lon % 360
 
         # Fill in missing values of pressure and wind
-        if do_fill_missing_pw:
+        if configs["do_fill_missing_pw"]:
             fill_missing_pressure_wind(tracks)
 
         # Filter observational records
-        if debug_level >= 1:
+        if configs["debug_level"] >= 1:
             print("DEBUG1: Storms originally: ", len(tracks.groupby("track_id")))
-        tracks = filter_tracks(tracks, do_special_filter_obs and ii == 0, basin)
+        tracks = filter_tracks(
+            tracks, configs["do_special_filter_obs"] and ii == 0, configs["basin"],
+            configs["stmon"], configs["enmon"], configs["styr"], configs["enyr"], configs["truncate_years"]
+        )
 
-        if debug_level >= 1:
+        if configs["debug_level"] >= 1:
             print("DEBUG1: Storms after time filter: ", len(tracks.groupby("track_id")))
         #########################################
 
@@ -230,7 +198,7 @@ def main():
 
         # Calculate LMI
         for kk, (track_id, track) in enumerate(tracks.groupby("track_id")):
-            if do_defineMIbypres:
+            if configs["do_defineMIbypres"]:
                 locMI = track.slp.argmin()
             else:
                 locMI = track.wind.argmax()
@@ -245,7 +213,7 @@ def main():
 
         # Calculate storm-accumulated ACE
         xace = huracanpy.diags.track_stats.ace_by_track(
-            tracks, tracks.wind, threshold=THRESHOLD_ACE_WIND, keep_ace_by_point=True
+            tracks, tracks.wind, threshold=configs["THRESHOLD_ACE_WIND"], keep_ace_by_point=True
         ).values
 
         # Calculate PACE
@@ -256,7 +224,7 @@ def main():
                 tracks,
                 tracks.slp,
                 wind=tracks.wind,
-                threshold_pressure=THRESHOLD_PACE_PRES,
+                threshold_pressure=configs["THRESHOLD_PACE_PRES"],
                 keep_pace_by_point=True,
             )
         else:
@@ -264,7 +232,7 @@ def main():
                 tracks,
                 tracks.slp,
                 model=pw_model,
-                threshold_pressure=THRESHOLD_PACE_PRES,
+                threshold_pressure=configs["THRESHOLD_PACE_PRES"],
                 keep_pace_by_point=True,
             )
         xpace = xpace.values
@@ -292,15 +260,15 @@ def main():
                 total_cyclone_days=("storm", xtcd),
                 accumulated_cyclone_energy=("storm", xace),
                 pressure_accumulated_cyclone_energy=("storm", xpace),
-                model=[strs[ii]] * len(xgyear),
+                model=[model] * len(xgyear),
             ),
             coords=dict(storm=np.arange(len(xgyear))),
         )
 
         os.makedirs(os.path.dirname("./csv-files/"), exist_ok=True)
-        csvfilename_out = f"{os.path.splitext(csvfilename)[0]}_{strbasin}"
+        csvfilename_out = f"{configs['filename_out']}_{strbasin}"
         filtered_storm_data.to_netcdf(
-            f"./csv-files/storms_{csvfilename_out}_{strs[ii]}_output.nc"
+            f"./csv-files/storms_{csvfilename_out}_{model}_output.nc"
         )
 
         # Bin storms per dataset per calendar month
@@ -321,19 +289,19 @@ def main():
 
         # Bin storms per dataset per calendar year
         for year in years:
-            yrix = year - styr  # Convert from year to zero indexing for numpy array
+            yrix = year - configs["styr"]  # Convert from year to zero indexing for numpy array
             if np.nanmin(xgyear) <= year <= np.nanmax(xgyear):
                 pydict["py_count"][ii, yrix] = (
-                    np.count_nonzero(xgyear == year) / ensmembers[ii]
+                    np.count_nonzero(xgyear == year) / model_config["ensmembers"]
                 )
                 pydict["py_tcd"][ii, yrix] = (
-                    np.nansum(np.where(xgyear == year, xtcd, 0.0)) / ensmembers[ii]
+                    np.nansum(np.where(xgyear == year, xtcd, 0.0)) / model_config["ensmembers"]
                 )
                 pydict["py_ace"][ii, yrix] = (
-                    np.nansum(np.where(xgyear == year, xace, 0.0)) / ensmembers[ii]
+                    np.nansum(np.where(xgyear == year, xace, 0.0)) / model_config["ensmembers"]
                 )
                 pydict["py_pace"][ii, yrix] = (
-                    np.nansum(np.where(xgyear == year, xpace, 0.0)) / ensmembers[ii]
+                    np.nansum(np.where(xgyear == year, xpace, 0.0)) / model_config["ensmembers"]
                 )
                 pydict["py_lmi"][ii, yrix] = np.nanmean(
                     np.where(xgyear == year, xlatmi, float("NaN"))
@@ -478,7 +446,7 @@ def main():
         # Swap per month strings with corr prefix and init dict key
         repStr = re.sub("pm_", "rs_", jj)
         rsdict[repStr] = np.empty(nfiles)
-        for ii in range(len(files)):
+        for ii in range(len(configs["models"])):
             # Create tmp vars and find nans
             tmpx = pmdict[jj][0, :]
             tmpy = pmdict[jj][ii, :]
@@ -491,7 +459,7 @@ def main():
         # Swap per month strings with corr prefix and init dict key
         repStr = re.sub("pm_", "rp_", jj)
         rpdict[repStr] = np.empty(nfiles)
-        for ii in range(len(files)):
+        for ii in range(len(configs["models"])):
             # Create tmp vars and find nans
             tmpx = pmdict[jj][0, :]
             tmpy = pmdict[jj][ii, :]
@@ -533,14 +501,14 @@ def main():
     # Write out primary stats files
     write_single_csv(
         [rxydict, rsdict, rpdict, aydict, asdict],
-        strs,
+        models,
         "./csv-files/",
         f"metrics_{csvfilename_out}.csv",
     )
 
     write_single_csv(
         [stdydict],
-        [strs[0]],
+        [models[0]],
         "./csv-files/",
         f"means_{csvfilename_out}_climo_mean.csv",
     )
@@ -548,12 +516,12 @@ def main():
     # Package a series of global package inputs for storage as NetCDF attributes
     globaldict = dict(
         strbasin=strbasin,
-        do_special_filter_obs=str(do_special_filter_obs),
-        do_fill_missing_pw=str(do_fill_missing_pw),
-        csvfilename=csvfilename,
-        truncate_years=str(truncate_years),
-        do_defineMIbypres=str(do_defineMIbypres),
-        gridsize=gridsize,
+        do_special_filter_obs=str(configs["do_special_filter_obs"]),
+        do_fill_missing_pw=str(configs["do_fill_missing_pw"]),
+        csvfilename=configs["filename_out"] + ".csv",
+        truncate_years=str(configs["truncate_years"]),
+        do_defineMIbypres=str(configs["do_defineMIbypres"]),
+        gridsize=configs["gridsize"],
     )
 
     # Write NetCDF file
@@ -562,7 +530,7 @@ def main():
         pmdict,
         pydict,
         taydict,
-        strs,
+        models,
         years,
         months,
         denslat,
