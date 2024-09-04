@@ -1,4 +1,28 @@
 import numpy as np
+import xarray as xr
+
+
+def spatial_correlations(
+    ms_ds, models, denslatwgt, names=dict(
+        rxy_track="fulldens",
+        rxy_gen="fullgen",
+        rxy_u10="fullwind",
+        rxy_slp="fullpres",
+        rxy_ace="fullace",
+        rxy_pace="fullpace",
+    )
+):
+    nfiles = len(models)
+    rxy_ds = xr.Dataset(coords=dict(model=models))
+
+    for name_out, name_in in names.items():
+        rxy_ds[name_out] = ("model", np.array([
+            pattern_cor(
+                ms_ds[name_in][0, :, :], ms_ds[name_in][ii, :, :], denslatwgt, 0
+            ) for ii in range(nfiles)
+        ]))
+
+    return rxy_ds
 
 
 def pattern_cor(x, y, w, opt):

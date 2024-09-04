@@ -1,6 +1,6 @@
 import os
-import re
 import yaml
+from datetime import datetime
 
 import numpy as np
 import xarray as xr
@@ -10,63 +10,76 @@ import huracanpy
 
 from functions.mask_tc import maskTC, getbasinmaskstr, fill_missing_pressure_wind
 from functions.track_density import track_density, track_mean, track_minmax, create_grid
-from functions.write_spatial import write_spatial_netcdf, write_single_csv
-from functions.pattern_cor import pattern_cor, taylor_stats
+from functions.pattern_cor import spatial_correlations, taylor_stats
 
 
-def initialise_arrays(nfiles, nyears, nmonths, denslon, denslat):
-    # Init per year arrays
-    pydict = {
-        var: np.full([nfiles, nyears], np.nan)
-        for var in ["py_count", "py_tcd", "py_ace", "py_pace", "py_latgen", "py_lmi"]
-    }
+def initialise_arrays(models, years, months, denslon, denslat):
+    data_vars = dict()
+    for var in ["py_count", "py_tcd", "py_ace", "py_pace", "py_latgen", "py_lmi"]:
+        data_vars[var] = (("model", "year"), np.full([len(models), len(years)], np.nan))
 
-    # Init per month arrays
-    pmdict = {
-        var: np.full((nfiles, nmonths), np.nan)
-        for var in ["pm_count", "pm_tcd", "pm_ace", "pm_pace", "pm_lmi"]
-    }
+    for var in ["pm_count", "pm_tcd", "pm_ace", "pm_pace", "pm_lmi"]:
+        data_vars[var] = (
+            ("model", "month"),
+            np.full((len(models), len(months)), np.nan),
+        )
 
-    # Average by year arrays
-    aydict = {
-        var: np.full(nfiles, np.nan)
-        for var in ["uclim_count", "uclim_tcd", "uclim_ace", "uclim_pace", "uclim_lmi"]
-    }
+    for var in ["uclim_count", "uclim_tcd", "uclim_ace", "uclim_pace", "uclim_lmi"]:
+        data_vars[var] = ("model", np.full(len(models), np.nan))
 
-    # Average by storm arrays
-    asdict = {
-        var: np.full(nfiles, np.nan)
-        for var in ["utc_tcd", "utc_ace", "utc_pace", "utc_latgen", "utc_lmi"]
-    }
+    for var in ["utc_tcd", "utc_ace", "utc_pace", "utc_latgen", "utc_lmi"]:
+        data_vars[var] = ("model", np.full(len(models), np.nan))
 
-    # generate master spatial arrays
-    msdict = {
-        var: np.empty((nfiles, denslat.size - 1, denslon.size - 1))
-        for var in [
-            "fulldens",
-            "fullpres",
-            "fullwind",
-            "fullgen",
-            "fullace",
-            "fullpace",
-            "fulltcd",
-            "fulltrackbias",
-            "fullgenbias",
-            "fullacebias",
-            "fullpacebias",
-        ]
-    }
+    for var in [
+        "fulldens",
+        "fullpres",
+        "fullwind",
+        "fullgen",
+        "fullace",
+        "fullpace",
+        "fulltcd",
+        "fulltrackbias",
+        "fullgenbias",
+        "fullacebias",
+        "fullpacebias",
+    ]:
+        data_vars[var] = (
+            ("model", "lat", "lon"),
+            np.empty((len(models), denslat.size - 1, denslon.size - 1)),
+        )
 
-    # Initialize dict
-    rxydict = {
-        var: np.empty(nfiles)
-        for var in ["rxy_track", "rxy_gen", "rxy_u10", "rxy_slp", "rxy_ace", "rxy_pace"]
-    }
+    ds_out = xr.Dataset(
+        data_vars=data_vars,
+        coords=dict(
+            model=models,
+            lat=0.5 * (denslat[:-1] + denslat[1:]),
+            lon=0.5 * (denslon[:-1] + denslon[1:]),
+            month=months,
+            year=years,
+        ),
+    )
 
-    return pydict, pmdict, aydict, asdict, msdict, rxydict
+    # create latitude axis
+    ds_out.lat.attrs = dict(
+        standard_name="latitude",
+        long_name="latitude",
+        units="degrees_north",
+        axis="Y",
+    )
+
+    ds_out.lon.attrs = dict(
+        standard_name="longitude",
+        long_name="longitude",
+        units="degrees_east",
+        axis="X",
+    )
+
+    return ds_out
 
 
-def filter_tracks(tracks, special_filter_obs, basin, stmon, enmon, styr, enyr, truncate_years):
+def filter_tracks(
+    tracks, special_filter_obs, basin, stmon, enmon, styr, enyr, truncate_years
+):
     # if "control" record and do_special_filter_obs = true, we can apply specific
     # criteria here to match objective tracks better
     # for example, ibtracs includes tropical depressions, eliminate these to get WMO
@@ -123,12 +136,12 @@ def main():
     models = list(configs["models"].keys())
     nfiles = len(models)
     years = list(range(configs["styr"], configs["enyr"] + 1))
-    nyears = len(years)
     if configs["enmon"] < configs["stmon"]:
-        months = list(range(configs["stmon"], 12 + 1)) + list(range(1, configs["enmon"] + 1))
+        months = list(range(configs["stmon"], 12 + 1)) + list(
+            range(1, configs["enmon"] + 1)
+        )
     else:
         months = list(range(configs["stmon"], configs["enmon"] + 1))
-    nmonths = len(months)
 
     # Generate grid for spatial patterns
     lonstart = 0.0
@@ -136,12 +149,14 @@ def main():
     denslatwgt = np.cos(np.deg2rad(0.5 * (denslat[:-1] + denslat[1:])))
 
     # Initialize global numpy array/dicts
-    pydict, pmdict, aydict, asdict, msdict, rxydict = initialise_arrays(
-        nfiles, nyears, nmonths, denslon, denslat
-    )
+    ds_out = initialise_arrays(models, years, months, denslon, denslat)
 
     # Get basin string
     strbasin = getbasinmaskstr(configs["basin"])
+
+    # Make path for "csv" files
+    os.makedirs(os.path.dirname("./csv-files/"), exist_ok=True)
+    csvfilename_out = f"{configs['filename_out']}_{strbasin}"
 
     for ii, (model, model_config) in enumerate(configs["models"].items()):
         print("-----------------------------------------------------------------------")
@@ -150,7 +165,7 @@ def main():
         # Determine the number of model years available in our dataset
         if configs["truncate_years"]:
             # print("Truncating years from "+yearspermember(zz)+" to "+nyears)
-            nmodyears = model_config["ensmembers"] * nyears
+            nmodyears = model_config["ensmembers"] * len(years)
         else:
             # print("Using years per member of "+yearspermember(zz))
             nmodyears = model_config["ensmembers"] * model_config["yearspermember"]
@@ -159,7 +174,7 @@ def main():
         # USER_MODIFY
         tracks = huracanpy.load(
             "trajs/" + model_config["filename"],
-            **{**configs["load_keywords"], **model_config["load_keywords"]}
+            **{**configs["load_keywords"], **model_config["load_keywords"]},
         )
         tracks["slp"] = tracks.slp / 100.0
         tracks["wind"] = tracks.wind * model_config["windcorrs"]
@@ -173,8 +188,14 @@ def main():
         if configs["debug_level"] >= 1:
             print("DEBUG1: Storms originally: ", len(tracks.groupby("track_id")))
         tracks = filter_tracks(
-            tracks, configs["do_special_filter_obs"] and ii == 0, configs["basin"],
-            configs["stmon"], configs["enmon"], configs["styr"], configs["enyr"], configs["truncate_years"]
+            tracks,
+            configs["do_special_filter_obs"] and ii == 0,
+            configs["basin"],
+            configs["stmon"],
+            configs["enmon"],
+            configs["styr"],
+            configs["enyr"],
+            configs["truncate_years"],
         )
 
         if configs["debug_level"] >= 1:
@@ -190,11 +211,8 @@ def main():
         xgyear = origin.time.dt.year.data
         xgday = origin.time.dt.day.data
         xghour = origin.time.dt.hour.data
-        xlatmi = np.empty(nstorms)
-        xlonmi = np.empty(nstorms)
-
-        xlatmi[:] = np.nan
-        xlonmi[:] = np.nan
+        xlatmi = np.full(nstorms, np.nan)
+        xlonmi = np.full(nstorms, np.nan)
 
         # Calculate LMI
         for kk, (track_id, track) in enumerate(tracks.groupby("track_id")):
@@ -213,7 +231,10 @@ def main():
 
         # Calculate storm-accumulated ACE
         xace = huracanpy.diags.track_stats.ace_by_track(
-            tracks, tracks.wind, threshold=configs["THRESHOLD_ACE_WIND"], keep_ace_by_point=True
+            tracks,
+            tracks.wind,
+            threshold=configs["THRESHOLD_ACE_WIND"],
+            keep_ace_by_point=True,
         ).values
 
         # Calculate PACE
@@ -260,80 +281,87 @@ def main():
                 total_cyclone_days=("storm", xtcd),
                 accumulated_cyclone_energy=("storm", xace),
                 pressure_accumulated_cyclone_energy=("storm", xpace),
-                model=[model] * len(xgyear),
+                model=("storm", [model] * len(xgyear)),
             ),
             coords=dict(storm=np.arange(len(xgyear))),
         )
 
-        os.makedirs(os.path.dirname("./csv-files/"), exist_ok=True)
-        csvfilename_out = f"{configs['filename_out']}_{strbasin}"
         filtered_storm_data.to_netcdf(
             f"./csv-files/storms_{csvfilename_out}_{model}_output.nc"
         )
 
         # Bin storms per dataset per calendar month
         for jj, month in enumerate(months):
-            pmdict["pm_count"][ii, jj] = np.count_nonzero(xgmonth == month) / nmodyears
-            pmdict["pm_tcd"][ii, jj] = (
+            ds_out.pm_count[ii, jj] = np.count_nonzero(xgmonth == month) / nmodyears
+            ds_out.pm_tcd[ii, jj] = (
                 np.nansum(np.where(xgmonth == month, xtcd, 0.0)) / nmodyears
             )
-            pmdict["pm_ace"][ii, jj] = (
+            ds_out.pm_ace[ii, jj] = (
                 np.nansum(np.where(xgmonth == month, xace, 0.0)) / nmodyears
             )
-            pmdict["pm_pace"][ii, jj] = (
+            ds_out.pm_pace[ii, jj] = (
                 np.nansum(np.where(xgmonth == month, xpace, 0.0)) / nmodyears
             )
-            pmdict["pm_lmi"][ii, jj] = np.nanmean(
+            ds_out.pm_lmi[ii, jj] = np.nanmean(
                 np.where(xgmonth == month, xlatmi, float("NaN"))
             )
 
         # Bin storms per dataset per calendar year
         for year in years:
-            yrix = year - configs["styr"]  # Convert from year to zero indexing for numpy array
+            yrix = (
+                year - configs["styr"]
+            )  # Convert from year to zero indexing for numpy array
             if np.nanmin(xgyear) <= year <= np.nanmax(xgyear):
-                pydict["py_count"][ii, yrix] = (
+                ds_out.py_count[ii, yrix] = (
                     np.count_nonzero(xgyear == year) / model_config["ensmembers"]
                 )
-                pydict["py_tcd"][ii, yrix] = (
-                    np.nansum(np.where(xgyear == year, xtcd, 0.0)) / model_config["ensmembers"]
+                ds_out.py_tcd[ii, yrix] = (
+                    np.nansum(np.where(xgyear == year, xtcd, 0.0))
+                    / model_config["ensmembers"]
                 )
-                pydict["py_ace"][ii, yrix] = (
-                    np.nansum(np.where(xgyear == year, xace, 0.0)) / model_config["ensmembers"]
+                ds_out.py_ace[ii, yrix] = (
+                    np.nansum(np.where(xgyear == year, xace, 0.0))
+                    / model_config["ensmembers"]
                 )
-                pydict["py_pace"][ii, yrix] = (
-                    np.nansum(np.where(xgyear == year, xpace, 0.0)) / model_config["ensmembers"]
+                ds_out.py_pace[ii, yrix] = (
+                    np.nansum(np.where(xgyear == year, xpace, 0.0))
+                    / model_config["ensmembers"]
                 )
-                pydict["py_lmi"][ii, yrix] = np.nanmean(
+                ds_out.py_lmi[ii, yrix] = np.nanmean(
                     np.where(xgyear == year, xlatmi, float("NaN"))
                 )
-                pydict["py_latgen"][ii, yrix] = np.nanmean(
+                ds_out.py_latgen[ii, yrix] = np.nanmean(
                     np.where(xgyear == year, np.absolute(xglat), float("NaN"))
                 )
 
         # Calculate control interannual standard deviations
         if ii == 0:
-            stdydict = {
-                "sdy_count": [np.nanstd(pydict["py_count"][ii, :])],
-                "sdy_tcd": [np.nanstd(pydict["py_tcd"][ii, :])],
-                "sdy_ace": [np.nanstd(pydict["py_ace"][ii, :])],
-                "sdy_pace": [np.nanstd(pydict["py_pace"][ii, :])],
-                "sdy_lmi": [np.nanstd(pydict["py_lmi"][ii, :])],
-                "sdy_latgen": [np.nanstd(pydict["py_latgen"][ii, :])],
-            }
+            stdy_ds = xr.Dataset(
+                data_vars=dict(
+                    sdy_count=("model", [np.nanstd(ds_out.py_count[ii, :])]),
+                    sdy_tcd=("model", [np.nanstd(ds_out.py_tcd[ii, :])]),
+                    sdy_ace=("model", [np.nanstd(ds_out.py_ace[ii, :])]),
+                    sdy_pace=("model", [np.nanstd(ds_out.py_pace[ii, :])]),
+                    sdy_lmi=("model", [np.nanstd(ds_out.py_lmi[ii, :])]),
+                    sdy_latgen=("model", [np.nanstd(ds_out.py_latgen[ii, :])]),
+                ),
+                coords=dict(model=[models[0]]),
+            )
+            stdy_ds.to_netcdf(f"csv-files/means_{csvfilename_out}_climo_mean.nc")
 
         # Calculate annual averages
-        aydict["uclim_count"][ii] = np.nansum(pmdict["pm_count"][ii, :])
-        aydict["uclim_tcd"][ii] = np.nansum(xtcd) / nmodyears
-        aydict["uclim_ace"][ii] = np.nansum(xace) / nmodyears
-        aydict["uclim_pace"][ii] = np.nansum(xpace) / nmodyears
-        aydict["uclim_lmi"][ii] = np.nanmean(pydict["py_lmi"][ii, :])
+        ds_out.uclim_count[ii] = np.nansum(ds_out.pm_count[ii, :])
+        ds_out.uclim_tcd[ii] = np.nansum(xtcd) / nmodyears
+        ds_out.uclim_ace[ii] = np.nansum(xace) / nmodyears
+        ds_out.uclim_pace[ii] = np.nansum(xpace) / nmodyears
+        ds_out.uclim_lmi[ii] = np.nanmean(ds_out.py_lmi[ii, :])
 
         # Calculate storm averages
-        asdict["utc_tcd"][ii] = np.nanmean(xtcd)
-        asdict["utc_ace"][ii] = np.nanmean(xace)
-        asdict["utc_pace"][ii] = np.nanmean(xpace)
-        asdict["utc_lmi"][ii] = np.nanmean(xlatmi)
-        asdict["utc_latgen"][ii] = np.nanmean(np.absolute(xglat))
+        ds_out.utc_tcd[ii] = np.nanmean(xtcd)
+        ds_out.utc_ace[ii] = np.nanmean(xace)
+        ds_out.utc_pace[ii] = np.nanmean(xpace)
+        ds_out.utc_lmi[ii] = np.nanmean(xlatmi)
+        ds_out.utc_latgen[ii] = np.nanmean(np.absolute(xglat))
 
         # Calculate spatial densities, integrals, and min/maxes
         trackdens = (
@@ -399,75 +427,47 @@ def main():
             maxwind = float("NaN")
 
         # Store this model's data in the master spatial array
-        msdict["fulldens"][ii, :, :] = trackdens[:, :]
-        msdict["fullgen"][ii, :, :] = gendens[:, :]
-        msdict["fullpace"][ii, :, :] = pacedens[:, :]
-        msdict["fullace"][ii, :, :] = acedens[:, :]
-        msdict["fulltcd"][ii, :, :] = tcddens[:, :]
-        msdict["fullpres"][ii, :, :] = minpres[:, :]
-        msdict["fullwind"][ii, :, :] = maxwind[:, :]
-        msdict["fulltrackbias"][ii, :, :] = (
-            trackdens[:, :] - msdict["fulldens"][0, :, :]
-        )
-        msdict["fullgenbias"][ii, :, :] = gendens[:, :] - msdict["fullgen"][0, :, :]
-        msdict["fullacebias"][ii, :, :] = acedens[:, :] - msdict["fullace"][0, :, :]
-        msdict["fullpacebias"][ii, :, :] = pacedens[:, :] - msdict["fullpace"][0, :, :]
+        ds_out.fulldens[ii, :, :] = trackdens[:, :]
+        ds_out.fullgen[ii, :, :] = gendens[:, :]
+        ds_out.fullpace[ii, :, :] = pacedens[:, :]
+        ds_out.fullace[ii, :, :] = acedens[:, :]
+        ds_out.fulltcd[ii, :, :] = tcddens[:, :]
+        ds_out.fullpres[ii, :, :] = minpres[:, :]
+        ds_out.fullwind[ii, :, :] = maxwind[:, :]
+        ds_out.fulltrackbias[ii, :, :] = trackdens[:, :] - ds_out.fulldens[0, :, :]
+        ds_out.fullgenbias[ii, :, :] = gendens[:, :] - ds_out.fullgen[0, :, :]
+        ds_out.fullacebias[ii, :, :] = acedens[:, :] - ds_out.fullace[0, :, :]
+        ds_out.fullpacebias[ii, :, :] = pacedens[:, :] - ds_out.fullpace[0, :, :]
 
-        print(
-            "-------------------------------------------------------------------------"
-        )
+        print("-----------------------------------------------------------------------")
 
     # Back to the main program
     # Spatial correlation calculations
-    for ii in range(nfiles):
-        rxydict["rxy_track"][ii] = pattern_cor(
-            msdict["fulldens"][0, :, :], msdict["fulldens"][ii, :, :], denslatwgt, 0
-        )
-        rxydict["rxy_gen"][ii] = pattern_cor(
-            msdict["fullgen"][0, :, :], msdict["fullgen"][ii, :, :], denslatwgt, 0
-        )
-        rxydict["rxy_u10"][ii] = pattern_cor(
-            msdict["fullwind"][0, :, :], msdict["fullwind"][ii, :, :], denslatwgt, 0
-        )
-        rxydict["rxy_slp"][ii] = pattern_cor(
-            msdict["fullpres"][0, :, :], msdict["fullpres"][ii, :, :], denslatwgt, 0
-        )
-        rxydict["rxy_ace"][ii] = pattern_cor(
-            msdict["fullace"][0, :, :], msdict["fullace"][ii, :, :], denslatwgt, 0
-        )
-        rxydict["rxy_pace"][ii] = pattern_cor(
-            msdict["fullpace"][0, :, :], msdict["fullpace"][ii, :, :], denslatwgt, 0
-        )
+    rxy_ds = spatial_correlations(ds_out, models, denslatwgt)
 
     # Temporal correlation calculations
     # Spearman Rank
-    rsdict = {}
-    for jj in pmdict:
-        # Swap per month strings with corr prefix and init dict key
-        repStr = re.sub("pm_", "rs_", jj)
-        rsdict[repStr] = np.empty(nfiles)
-        for ii in range(len(configs["models"])):
-            # Create tmp vars and find nans
-            tmpx = pmdict[jj][0, :]
-            tmpy = pmdict[jj][ii, :]
-            nas = np.logical_or(np.isnan(tmpx), np.isnan(tmpy))
-            rsdict[repStr][ii], tmp = sps.spearmanr(tmpx[~nas], tmpy[~nas])
-
+    rs_ds = xr.Dataset(coords=dict(model=models))
     # Pearson correlation
-    rpdict = {}
-    for jj in pmdict:
-        # Swap per month strings with corr prefix and init dict key
-        repStr = re.sub("pm_", "rp_", jj)
-        rpdict[repStr] = np.empty(nfiles)
-        for ii in range(len(configs["models"])):
-            # Create tmp vars and find nans
-            tmpx = pmdict[jj][0, :]
-            tmpy = pmdict[jj][ii, :]
-            nas = np.logical_or(np.isnan(tmpx), np.isnan(tmpy))
-            rpdict[repStr][ii], tmp = sps.pearsonr(tmpx[~nas], tmpy[~nas])
+    rp_ds = xr.Dataset(coords=dict(model=models))
+    for jj in ds_out:
+        if "pm_" in jj:
+            # Swap per month strings with corr prefix and init dict key
+            repStr = jj.replace("pm_", "rs_")
+            rs_ds[repStr] = ("model", np.empty(nfiles))
+
+            repStr_p = jj.replace("pm_", "rp_")
+            rp_ds[repStr_p] = ("model", np.empty(nfiles))
+            for ii in range(len(configs["models"])):
+                # Create tmp vars and find nans
+                tmpx = ds_out[jj][0, :]
+                tmpy = ds_out[jj][ii, :]
+                nas = np.logical_or(np.isnan(tmpx), np.isnan(tmpy))
+
+                rs_ds[repStr][ii], tmp = sps.spearmanr(tmpx[~nas], tmpy[~nas])
+                rp_ds[repStr_p][ii], tmp = sps.pearsonr(tmpx[~nas], tmpy[~nas])
 
     # Generate Taylor dict
-    taydict = {}
     tayvars = [
         "tay_pc",
         "tay_ratio",
@@ -479,42 +479,39 @@ def main():
         "tay_rmse",
     ]
     for x in tayvars:
-        taydict[x] = np.empty(nfiles)
+        ds_out[x] = ("model", np.empty(nfiles))
 
     # Calculate Taylor stats and put into taylor dict
     for ii in range(nfiles):
         ratio = taylor_stats(
-            msdict["fulldens"][ii, :, :], msdict["fulldens"][0, :, :], denslatwgt, 0
+            ds_out.fulldens[ii, :, :], ds_out.fulldens[0, :, :], denslatwgt, 0
         )
         for ix, x in enumerate(tayvars):
-            # print(x+" "+str(ratio[ix]))
-            taydict[x][ii] = ratio[ix]
+            ds_out[x][ii] = ratio[ix]
 
     # Calculate special bias for Taylor diagrams
-    taydict["tay_bias2"] = np.empty(nfiles)
+    ds_out["tay_bias2"] = ("model", np.empty(nfiles))
     for ii in range(nfiles):
-        taydict["tay_bias2"][ii] = 100.0 * (
-            (aydict["uclim_count"][ii] - aydict["uclim_count"][0])
-            / aydict["uclim_count"][0]
+        ds_out.tay_bias2[ii] = 100.0 * (
+            (ds_out.uclim_count[ii] - ds_out.uclim_count[0]) / ds_out.uclim_count[0]
         )
 
     # Write out primary stats files
-    write_single_csv(
-        [rxydict, rsdict, rpdict, aydict, asdict],
-        models,
-        "./csv-files/",
-        f"metrics_{csvfilename_out}.csv",
+    ds_ay_as = ds_out[[var for var in ds_out if ("uclim_" in var or "utc_" in var)]]
+    xr.merge([rxy_ds, rs_ds, rp_ds, ds_ay_as]).to_netcdf(
+        f"csv-files/metrics_{csvfilename_out}.nc"
     )
 
-    write_single_csv(
-        [stdydict],
-        [models[0]],
-        "./csv-files/",
-        f"means_{csvfilename_out}_climo_mean.csv",
-    )
-
+    # Write NetCDF file
+    ds_out = ds_out[
+        [
+            var
+            for var in ds_out
+            if ("pm_" in var or "py_" in var or "full" in var or "tay_" in var)
+        ]
+    ]
     # Package a series of global package inputs for storage as NetCDF attributes
-    globaldict = dict(
+    ds_out.attrs = dict(
         strbasin=strbasin,
         do_special_filter_obs=str(configs["do_special_filter_obs"]),
         do_fill_missing_pw=str(configs["do_fill_missing_pw"]),
@@ -522,21 +519,12 @@ def main():
         truncate_years=str(configs["truncate_years"]),
         do_defineMIbypres=str(configs["do_defineMIbypres"]),
         gridsize=configs["gridsize"],
+        description="Coastal metrics processed data",
+        history="Created " + datetime.today().strftime("%Y-%m-%d-%H:%M:%S"),
     )
-
-    # Write NetCDF file
-    write_spatial_netcdf(
-        msdict,
-        pmdict,
-        pydict,
-        taydict,
-        models,
-        years,
-        months,
-        denslat,
-        denslon,
-        globaldict,
-    )
+    netcdfdir = "./netcdf-files/"
+    os.makedirs(os.path.dirname(netcdfdir), exist_ok=True)
+    ds_out.to_netcdf(f"{netcdfdir}/netcdf_{strbasin}_{configs['filename_out']}.nc")
 
 
 if __name__ == "__main__":
