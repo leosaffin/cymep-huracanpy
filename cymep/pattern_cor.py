@@ -16,7 +16,7 @@ def spatial_correlations(
     rxy_ds = xr.Dataset(coords=dict(model=models))
 
     for name_out, name_in in names.items():
-        rxy_ds[name_out] = ("model", np.array([
+        rxy_ds[name_out] = ("dataset", np.array([
             pattern_cor(
                 ms_ds[name_in][0, :, :], ms_ds[name_in][ii, :, :], denslatwgt, 0
             ) for ii in range(nfiles)

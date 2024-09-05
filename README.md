@@ -1,8 +1,6 @@
 # CyMeP (Cyclone Metrics Package)
-
-[![DOI](https://zenodo.org/badge/263738878.svg)](https://zenodo.org/badge/latestdoi/263738878)
-
-[Zarzycki, C. M., Ullrich, P. A., and Reed, K. A. (2021). Metrics for evaluating tropical cyclones in climate data. *Journal of Applied Meteorology and Climatology*. doi: 10.1175/JAMC-D-20-0149.1.](https://doi.org/10.1175/JAMC-D-20-0149.1)
+## CyMeP-Huracanpy
+For the original CyMeP, see the [github repository](https://github.com/zarzycki/cymep) and [paper](https://doi.org/10.1175/JAMC-D-20-0149.1)
 
 ## General workflow
 1. Create a YAML configuration file
@@ -18,55 +16,88 @@ pip install .
 
 
 ## 1. Create a YAML configuration file
-Example for `examples/example_config.yaml`
+The easiest way to do this is to copy and modify `examples/example_config.yaml` which
+contains all the options as well as descriptions. The options can be split up into two
+parts, shown below.
 
-### 1.1 Configure options
+### 1.1 Configure cymep options
+The first part of the yaml file has options for how cymep performs the analysis
 
 ```yaml
-# cymep configuration
+# A tag to identify data and figures output by cymep using this configuration
 filename_out: "rean_configs"
+
+# Specify particular ocean basin/hemisphere based on mask functions
+# Set to negative to turn off filtering
 basin: 1
+
+# Length of side of each square gridbox used for spatial analysis in degrees
 gridsize: 8.0
+
+# Start and end year for overlapping interannual correlation analysis
 styr: 1980
 enyr: 2019
+
+# Filter out years external to styr and enyr for all analysis?
+# If False keep all data
+truncate_years: False
+
+# First and last month to include in climatology
+# If enmon < stmon, it will overlap December/January (e.g. 11, 12, 1, 2)
 stmon: 1
 enmon: 12
-truncate_years: False
-THRESHOLD_ACE_WIND: # wind speed (in m/s) to threshold ACE. None means off.
-THRESHOLD_PACE_PRES:  # slp (in hPa) to threshold PACE. None means off.
-do_special_filter_obs: True  # Special "if" block for first line (control)
+
+# Threshold wind (in m/s) for ACE calculations.
+# Leave empty for no threshold
+THRESHOLD_ACE_WIND:
+  
+# Threshold pressure (in hPa) for PACE calculations.
+# Leave empty for no threshold
+THRESHOLD_PACE_PRES:
+
+# Apply a wind-speed threshold of 17.5 to the reference set of tracks? (the first entry
+# in datasets).
+# False for no filter
+do_special_filter_obs: True
+
+# Fill missing data with observed pressure-wind curve?
+# False leaves data as missing
 do_fill_missing_pw: True
+
+# Define maximum intensity location by minimum PSL?
+# False uses maximum wind
 do_defineMIbypres: False
 ```
-| Variable              | Value             | Description                                                                                                        |
-|-----------------------|-------------------|--------------------------------------------------------------------------------------------------------------------|
-| filename_out          | rean_configs      |                                                                                                                    |
-| basin                 | 1                 | Set to negative to turn off filtering, otherwise specify particular ocean basin/hemisphere based on mask functions |
-| gridsize              | 8.0               | Length of side of each square gridbox used for spatial analysis in degrees                                         |
-| styr                  | 1980              | Start year for overlapping interannual correlation analysis                                                        |
-| enyr                  | 2019              | End year for overlapping interannual correlation analysis                                                          |
-| stmon                 | 1                 | First month to include in climatology                                                                              |
-| enmon                 | 12                | Last month to include in climatology                                                                               |
-| truncate_years        | False             | If `True` then filter out years external to styr and enyr. If `False` keep all data                                |
-| THRESHOLD_ACE_WIND    | None              | Select threshold wind (in m/s) for ACE calculations (leave empty for no threshold)                                 |
-| THRESHOLD_PACE_PRES   | None              | Select threshold SLP (in hPa) for PACE calculations (leave empty for no threshold)                                 |
-| do_special_filter_obs | True              | Apply a wind-speed threshold of 17.5 to the reference set of tracks? (`False` for no filter)                       |
-| do_fill_missing_pw    | True              | Fill missing data with observed pressure-wind curve? (`False` leaves data as missing)                              |
-| do_defineMIbypres     | False             | Define maximum intensity location by PSL instead of wind? (`False` uses wind)                                      |
 
-### 1.2 Add model configurations
+### 1.2 Add dataset configurations
+The second part of the yaml file is for specifying the datasets you want to analyse and
+how to find/load them
 
 ```yaml
+# The directory containing your tracks. Can be absolute or relative to where cymep is
+# run
+path_to_data: "trajs/"
+
+# Keywords passed to huracanpy.load() for all datasets
+# Can also be specified for each dataset if they require additional keywords
 load_keywords:
-  # Keywords passed to huracanpy.load(). Specified here for keywords used for every
-  # model and individually for each model if they have additional keywords
   tracker: tempestextremes
   tempest_extremes_unstructured: False
   variable_names:
     - slp
     - wind
     - unknown
-models:
+
+# Specify the track data to apply the analysis to
+# datasets is a dictionary mapping a name (used in the output files) for each dataset to
+# a dictionary of options for each dataset
+# - filename:       The file containing the set of tracks
+# - load_keywords:  Any additional keywords that need to be passed to huracanpy.load()
+#                   for this dataset
+# - ensmembers:     Number of ensemble members included in the dataset
+# - yearspermember: Number of years per ensemble member in the datasets
+# - windcorrs:      Wind speed correction factor
+datasets:
   OBS:
     filename: ibtracs-1980-2019-GLOB.v4.txt
     load_keywords: {}
@@ -84,16 +115,7 @@ models:
 ...
 ```
 
-| Variable       | Value                         | Description                                                                                                       |
-|----------------|-------------------------------|-------------------------------------------------------------------------------------------------------------------|
-|                | OBS                           | "Shortname" used for plotting, data output                                                                        | 
-| filename       | ibtracs-1980-2019-GLOB.v4.txt | Trajectory file name                                                                                              |
-| load_keyword   | Empty dictionary              | Keywords passed to [`huracanpy.load`](https://huracanpy.readthedocs.io/en/latest/api/loading.html#huracanpy.load) |
-| ensmembers     | 1                             | Number of ensemble members included in trajectory file                                                            |
-| yearspermember | 40                            | Number of years per ensemble member in trajectory file                                                            |
-| windcorrs      | 1.0                           | Wind speed correction factor                                                                                      |
-
-**NOTE**: The first entry will be defined as the reference, so this should *always* be either observations or some sort of model/configuration control.
+**NOTE**: The first entry in datasets will be defined as the reference, so this should *always* be either observations or some sort of model/configuration control.
 
 **NOTE**: The wind speed correction factor is a multiplier on the "wind" variable in the trajectory file to normalized from lowest model level to some reference height (e.g., lowest model level to 10m winds for TCs).
 
@@ -105,8 +127,8 @@ $> cymep config.yaml
 
 This will produce a handful of netCDF files in `cymep-data/`.
 - `"diags_{filename_out}_{basin}.nc"` The main set of output diagnostics
-- `"means_{filename_out}_{basin}.nc"` Climatologies computed from the reference model
-- `"storms_{filename_out}_{basin}_{model}.nc"` One file per model with metrics for each individual storm in the dataset
+- `"means_{filename_out}_{basin}.nc"` Climatologies computed from the reference dataset
+- `"storms_{filename_out}_{basin}_{dataset}.nc"` One file per dataset with metrics for each individual storm in the dataset
 
 ## 3. Run cymep-graphics
 

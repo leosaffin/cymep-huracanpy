@@ -1,29 +1,73 @@
 # cymep configuration
+# A tag to identify data and figures output by cymep using this configuration
 filename_out: "rean_configs"
+
+# Specify particular ocean basin/hemisphere based on mask functions
+# Set to negative to turn off filtering
 basin: 1
+
+# Length of side of each square gridbox used for spatial analysis in degrees
 gridsize: 8.0
+
+# Start and end year for overlapping interannual correlation analysis
 styr: 1980
 enyr: 2019
+
+# Filter out years external to styr and enyr for all analysis?
+# If False keep all data
+truncate_years: False
+
+# First and last month to include in climatology
+# If enmon < stmon, it will overlap December/January (e.g. 11, 12, 1, 2)
 stmon: 1
 enmon: 12
-truncate_years: False
-THRESHOLD_ACE_WIND: # wind speed (in m/s) to threshold ACE. None means off.
-THRESHOLD_PACE_PRES:  # slp (in hPa) to threshold PACE. None means off.
-do_special_filter_obs: True  # Special "if" block for first line (control)
+
+# Threshold wind (in m/s) for ACE calculations.
+# Leave empty for no threshold
+THRESHOLD_ACE_WIND:
+
+# Threshold pressure (in hPa) for PACE calculations.
+# Leave empty for no threshold
+THRESHOLD_PACE_PRES:
+
+# Apply a wind-speed threshold of 17.5 to the reference set of tracks?
+# (the first entry in datasets)
+# False for no filter
+do_special_filter_obs: True
+
+# Fill missing data with observed pressure-wind curve?
+# False leaves data as missing
 do_fill_missing_pw: True
+
+# Define maximum intensity location by minimum PSL?
+# False uses maximum wind
 do_defineMIbypres: False
 
-# Model configurations
+# Dataset configurations
+# The directory containing your tracks. Can be absolute or relative to where cymep is
+# run
+path_to_data: "trajs/"
+
+# Keywords passed to huracanpy.load() for all datasets
+# Can also be specified for each dataset if they require additional keywords
 load_keywords:
-  # Keywords passed to huracanpy.load(). Specified here for keywords used for every
-  # model and individually for each model if they have additional keywords
   tracker: tempestextremes
   tempest_extremes_unstructured: False
   variable_names:
     - slp
     - wind
     - unknown
-models:
+
+# Specify the track data to apply the analysis to
+# datasets is a dictionary mapping a name (used in the output files) for each dataset to
+# a dictionary of options for each dataset
+# - filename:       The file containing the set of tracks
+# - load_keywords:  Any additional keywords that need to be passed to huracanpy.load()
+#                   for this dataset
+# - ensmembers:     Number of ensemble members included in the dataset
+# - yearspermember: Number of years per ensemble member in the datasets
+# - windcorrs:      Wind speed correction factor
+datasets:
   OBS:
     filename: ibtracs-1980-2019-GLOB.v4.txt
     load_keywords: {}

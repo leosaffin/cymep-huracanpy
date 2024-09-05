@@ -15,22 +15,22 @@ from cymep.track_density import track_density, track_mean, track_minmax, create_
 from cymep.pattern_cor import spatial_correlations, taylor_stats
 
 
-def initialise_arrays(models, years, months, denslon, denslat):
+def initialise_arrays(datasets, years, months, denslon, denslat):
     data_vars = dict()
     for var in ["py_count", "py_tcd", "py_ace", "py_pace", "py_latgen", "py_lmi"]:
-        data_vars[var] = (("model", "year"), np.full([len(models), len(years)], np.nan))
+        data_vars[var] = (("dataset", "year"), np.full([len(datasets), len(years)], np.nan))
 
     for var in ["pm_count", "pm_tcd", "pm_ace", "pm_pace", "pm_lmi"]:
         data_vars[var] = (
-            ("model", "month"),
-            np.full((len(models), len(months)), np.nan),
+            ("dataset", "month"),
+            np.full((len(datasets), len(months)), np.nan),
         )
 
     for var in ["uclim_count", "uclim_tcd", "uclim_ace", "uclim_pace", "uclim_lmi"]:
-        data_vars[var] = ("model", np.full(len(models), np.nan))
+        data_vars[var] = ("dataset", np.full(len(datasets), np.nan))
 
     for var in ["utc_tcd", "utc_ace", "utc_pace", "utc_latgen", "utc_lmi"]:
-        data_vars[var] = ("model", np.full(len(models), np.nan))
+        data_vars[var] = ("dataset", np.full(len(datasets), np.nan))
 
     for var in [
         "fulldens",
@@ -46,14 +46,14 @@ def initialise_arrays(models, years, months, denslon, denslat):
         "fullpacebias",
     ]:
         data_vars[var] = (
-            ("model", "lat", "lon"),
-            np.empty((len(models), denslat.size - 1, denslon.size - 1)),
+            ("dataset", "lat", "lon"),
+            np.empty((len(datasets), denslat.size - 1, denslon.size - 1)),
         )
 
     ds_out = xr.Dataset(
         data_vars=data_vars,
         coords=dict(
-            model=models,
+            dataset=datasets,
             lat=0.5 * (denslat[:-1] + denslat[1:]),
             lon=0.5 * (denslon[:-1] + denslon[1:]),
             month=months,
@@ -135,8 +135,8 @@ def generate_diagnostics(config_filename):
         configs = yaml.safe_load(f)
 
     # Get some useful global values based on input data
-    models = list(configs["models"].keys())
-    nfiles = len(models)
+    datasets = list(configs["datasets"].keys())
+    nfiles = len(datasets)
     years = list(range(configs["styr"], configs["enyr"] + 1))
     if configs["enmon"] < configs["stmon"]:
         months = list(range(configs["stmon"], 12 + 1)) + list(
@@ -151,7 +151,7 @@ def generate_diagnostics(config_filename):
     denslatwgt = np.cos(np.deg2rad(0.5 * (denslat[:-1] + denslat[1:])))
 
     # Initialize global numpy array/dicts
-    ds_out = initialise_arrays(models, years, months, denslon, denslat)
+    ds_out = initialise_arrays(datasets, years, months, denslon, denslat)
 
     # Get basin string
     strbasin = getbasinmaskstr(configs["basin"])
@@ -161,26 +161,28 @@ def generate_diagnostics(config_filename):
     output_dir = pathlib.Path("cymep-data/")
     output_dir.mkdir(exist_ok=True)
 
-    for ii, (model, model_config) in enumerate(configs["models"].items()):
+    # Load and analyse each dataset
+    input_dir = pathlib.Path(configs["path_to_data"])
+    for ii, (dataset, dataset_config) in enumerate(configs["datasets"].items()):
         print("-----------------------------------------------------------------------")
-        print(model_config["filename"])
+        print(dataset_config["filename"])
 
-        # Determine the number of model years available in our dataset
+        # Determine the number of years available in our dataset
         if configs["truncate_years"]:
             # print("Truncating years from "+yearspermember(zz)+" to "+nyears)
-            nmodyears = model_config["ensmembers"] * len(years)
+            nmodyears = dataset_config["ensmembers"] * len(years)
         else:
             # print("Using years per member of "+yearspermember(zz))
-            nmodyears = model_config["ensmembers"] * model_config["yearspermember"]
+            nmodyears = dataset_config["ensmembers"] * dataset_config["yearspermember"]
 
         # Extract trajectories from tempest file and assign to arrays
         # USER_MODIFY
         tracks = huracanpy.load(
-            "trajs/" + model_config["filename"],
-            **{**configs["load_keywords"], **model_config["load_keywords"]},
+            str(input_dir / dataset_config["filename"]),
+            **{**configs["load_keywords"], **dataset_config["load_keywords"]},
         )
         tracks["slp"] = tracks.slp / 100.0
-        tracks["wind"] = tracks.wind * model_config["windcorrs"]
+        tracks["wind"] = tracks.wind * dataset_config["windcorrs"]
         tracks["lon"] = tracks.lon % 360
 
         # Fill in missing values of pressure and wind
@@ -278,12 +280,12 @@ def generate_diagnostics(config_filename):
                 total_cyclone_days=("storm", xtcd),
                 accumulated_cyclone_energy=("storm", xace),
                 pressure_accumulated_cyclone_energy=("storm", xpace),
-                model=("storm", [model] * len(xgyear)),
+                dataset=("storm", [dataset] * len(xgyear)),
             ),
             coords=dict(storm=np.arange(len(xgyear))),
         )
 
-        filtered_storm_data.to_netcdf(output_dir / f"storms_{filename_out}_{model}.nc")
+        filtered_storm_data.to_netcdf(output_dir / f"storms_{filename_out}_{dataset}.nc")
 
         # Bin storms per dataset per calendar month
         for jj, month in enumerate(months):
@@ -308,19 +310,19 @@ def generate_diagnostics(config_filename):
             )  # Convert from year to zero indexing for numpy array
             if np.nanmin(xgyear) <= year <= np.nanmax(xgyear):
                 ds_out.py_count[ii, yrix] = (
-                    np.count_nonzero(xgyear == year) / model_config["ensmembers"]
+                        np.count_nonzero(xgyear == year) / dataset_config["ensmembers"]
                 )
                 ds_out.py_tcd[ii, yrix] = (
-                    np.nansum(np.where(xgyear == year, xtcd, 0.0))
-                    / model_config["ensmembers"]
+                        np.nansum(np.where(xgyear == year, xtcd, 0.0))
+                        / dataset_config["ensmembers"]
                 )
                 ds_out.py_ace[ii, yrix] = (
-                    np.nansum(np.where(xgyear == year, xace, 0.0))
-                    / model_config["ensmembers"]
+                        np.nansum(np.where(xgyear == year, xace, 0.0))
+                        / dataset_config["ensmembers"]
                 )
                 ds_out.py_pace[ii, yrix] = (
-                    np.nansum(np.where(xgyear == year, xpace, 0.0))
-                    / model_config["ensmembers"]
+                        np.nansum(np.where(xgyear == year, xpace, 0.0))
+                        / dataset_config["ensmembers"]
                 )
                 ds_out.py_lmi[ii, yrix] = np.nanmean(
                     np.where(xgyear == year, xlatmi, float("NaN"))
@@ -406,7 +408,7 @@ def generate_diagnostics(config_filename):
             minpres = float("NaN")
             maxwind = float("NaN")
 
-        # Store this model's data in the master spatial array
+        # Store this dataset's data in the master spatial array
         ds_out.fulldens[ii, :, :] = trackdens[:, :]
         ds_out.fullgen[ii, :, :] = gendens[:, :]
         ds_out.fullpace[ii, :, :] = pacedens[:, :]
@@ -423,7 +425,7 @@ def generate_diagnostics(config_filename):
 
     # Back to the main program
     # Spatial correlation calculations
-    rxy_ds = spatial_correlations(ds_out, models, denslatwgt)
+    rxy_ds = spatial_correlations(ds_out, datasets, denslatwgt)
 
     # Temporal correlation calculations
     for jj in ds_out:
@@ -431,12 +433,12 @@ def generate_diagnostics(config_filename):
             # Swap per month strings with corr prefix and init dict key
             # Spearman Rank
             repStr = jj.replace("pm_", "rs_")
-            ds_out[repStr] = ("model", np.empty(nfiles))
+            ds_out[repStr] = ("dataset", np.empty(nfiles))
 
             # Pearson correlation
             repStr_p = jj.replace("pm_", "rp_")
-            ds_out[repStr_p] = ("model", np.empty(nfiles))
-            for ii in range(len(configs["models"])):
+            ds_out[repStr_p] = ("dataset", np.empty(nfiles))
+            for ii in range(len(configs["datasets"])):
                 # Create tmp vars and find nans
                 tmpx = ds_out[jj][0, :]
                 tmpy = ds_out[jj][ii, :]
@@ -457,7 +459,7 @@ def generate_diagnostics(config_filename):
         "tay_rmse",
     ]
     for x in tayvars:
-        ds_out[x] = ("model", np.empty(nfiles))
+        ds_out[x] = ("dataset", np.empty(nfiles))
 
     # Calculate Taylor stats and put into taylor dict
     for ii in range(nfiles):
@@ -468,7 +470,7 @@ def generate_diagnostics(config_filename):
             ds_out[x][ii] = ratio[ix]
 
     # Calculate special bias for Taylor diagrams
-    ds_out["tay_bias2"] = ("model", np.empty(nfiles))
+    ds_out["tay_bias2"] = ("dataset", np.empty(nfiles))
     for ii in range(nfiles):
         ds_out.tay_bias2[ii] = 100.0 * (
             (ds_out.uclim_count[ii] - ds_out.uclim_count[0]) / ds_out.uclim_count[0]
@@ -479,14 +481,14 @@ def generate_diagnostics(config_filename):
     # Calculate control interannual standard deviations
     stdy_ds = xr.Dataset(
         data_vars=dict(
-            sdy_count=("model", [np.nanstd(ds_out.py_count[0, :])]),
-            sdy_tcd=("model", [np.nanstd(ds_out.py_tcd[0, :])]),
-            sdy_ace=("model", [np.nanstd(ds_out.py_ace[0, :])]),
-            sdy_pace=("model", [np.nanstd(ds_out.py_pace[0, :])]),
-            sdy_lmi=("model", [np.nanstd(ds_out.py_lmi[0, :])]),
-            sdy_latgen=("model", [np.nanstd(ds_out.py_latgen[0, :])]),
+            sdy_count=("dataset", [np.nanstd(ds_out.py_count[0, :])]),
+            sdy_tcd=("dataset", [np.nanstd(ds_out.py_tcd[0, :])]),
+            sdy_ace=("dataset", [np.nanstd(ds_out.py_ace[0, :])]),
+            sdy_pace=("dataset", [np.nanstd(ds_out.py_pace[0, :])]),
+            sdy_lmi=("dataset", [np.nanstd(ds_out.py_lmi[0, :])]),
+            sdy_latgen=("dataset", [np.nanstd(ds_out.py_latgen[0, :])]),
         ),
-        coords=dict(model=[models[0]]),
+        coords=dict(dataset=[datasets[0]]),
     )
     stdy_ds.to_netcdf(output_dir / f"means_{filename_out}.nc")
 

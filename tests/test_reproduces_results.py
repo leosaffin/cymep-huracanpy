@@ -15,6 +15,7 @@ def test_all():
     # Check that newly generated files all match the old files
     for fname in pathlib.Path("cymep-data/").glob("*_old.nc"):
         ds_old = xr.open_dataset(fname)
+        ds_old = ds_old.rename(dict(model="dataset"))
         ds = xr.open_dataset(str(fname).replace("_old.nc", ".nc"))
 
         # The timestamp won't match, so remove this
