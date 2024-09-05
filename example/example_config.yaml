@@ -1,0 +1,81 @@
+# cymep configuration
+filename_out: "rean_configs"
+basin: 1
+gridsize: 8.0
+styr: 1980
+enyr: 2019
+stmon: 1
+enmon: 12
+truncate_years: False
+THRESHOLD_ACE_WIND: # wind speed (in m/s) to threshold ACE. None means off.
+THRESHOLD_PACE_PRES:  # slp (in hPa) to threshold PACE. None means off.
+do_special_filter_obs: True  # Special "if" block for first line (control)
+do_fill_missing_pw: True
+do_defineMIbypres: False
+
+# Model configurations
+load_keywords:
+  # Keywords passed to huracanpy.load(). Specified here for keywords used for every
+  # model and individually for each model if they have additional keywords
+  tracker: tempestextremes
+  tempest_extremes_unstructured: False
+  variable_names:
+    - slp
+    - wind
+    - unknown
+models:
+  OBS:
+    filename: ibtracs-1980-2019-GLOB.v4.txt
+    load_keywords: {}
+    ensmembers: 1
+    yearspermember: 40
+    windcorrs: 1.0
+
+  ERAI:
+    filename: trajectories.txt.ERAI
+    load_keywords: {}
+    ensmembers: 1
+    yearspermember: 39
+    windcorrs: 1.0
+
+  20CRv3:
+    filename: trajectories.txt.CR20
+    load_keywords: {}
+    ensmembers: 1
+    yearspermember: 36
+    windcorrs: 1.0
+
+  MERRA:
+    filename: trajectories.txt.MERRA
+    load_keywords: {}
+    ensmembers: 1
+    yearspermember: 36
+    windcorrs: 0.85
+
+  MERRA2:
+    filename: trajectories.txt.MERRA2
+    load_keywords: {}
+    ensmembers: 1
+    yearspermember: 39
+    windcorrs: 0.85
+
+  JRA:
+    filename: trajectories.txt.JRA
+    load_keywords: {}
+    ensmembers: 1
+    yearspermember: 39
+    windcorrs: 0.98
+
+  CFSR:
+    filename: trajectories.txt.CFSR
+    load_keywords: {}
+    ensmembers: 1
+    yearspermember: 39
+    windcorrs: 0.883
+
+  ERA5:
+    filename: trajectories.txt.ERA5
+    load_keywords: {}
+    ensmembers: 1
+    yearspermember: 39
+    windcorrs: 1.0

@@ -1,8 +1,0 @@
-name: cymep
-channels:
-  - conda-forge
-dependencies:
-  - numpy=1.23.5
-  - pandas
-  - scipy
-  - netCDF4

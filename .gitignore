@@ -63,3 +63,4 @@ projects/ke/*.nc
 !trajectories.txt.MERRA
 !trajectories.txt.MERRA2
 !trajectories.txt.NARR
+cymep.egg-info

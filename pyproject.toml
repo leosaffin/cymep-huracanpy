@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cymep"
+requires-python = ">=3.8"
+dependencies = [
+    "huracanpy@git+https://github.com/Huracan-project/huracanpy",
+    "xarray",
+]
+version="0.1.0"
+
+[project.scripts]
+cymep = "cymep.cymep:main"
+cymep-graphics = "cymep.cymep_graphics:main"

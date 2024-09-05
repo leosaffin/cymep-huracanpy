@@ -1,4 +1,6 @@
-import os
+from argparse import ArgumentParser
+import pathlib
+
 import yaml
 from datetime import datetime
 
@@ -8,9 +10,9 @@ import scipy.stats as sps
 
 import huracanpy
 
-from functions.mask_tc import maskTC, getbasinmaskstr, fill_missing_pressure_wind
-from functions.track_density import track_density, track_mean, track_minmax, create_grid
-from functions.pattern_cor import spatial_correlations, taylor_stats
+from cymep.mask_tc import maskTC, getbasinmaskstr, fill_missing_pressure_wind
+from cymep.track_density import track_density, track_mean, track_minmax, create_grid
+from cymep.pattern_cor import spatial_correlations, taylor_stats
 
 
 def initialise_arrays(models, years, months, denslon, denslat):
@@ -127,9 +129,9 @@ def filter_tracks(
     return tracks
 
 
-def main():
+def generate_diagnostics(config_filename):
     # Read in configuration file
-    with open("example_config.yaml") as f:
+    with open(config_filename) as f:
         configs = yaml.safe_load(f)
 
     # Get some useful global values based on input data
@@ -154,9 +156,10 @@ def main():
     # Get basin string
     strbasin = getbasinmaskstr(configs["basin"])
 
-    # Make path for "csv" files
-    os.makedirs(os.path.dirname("./csv-files/"), exist_ok=True)
-    csvfilename_out = f"{configs['filename_out']}_{strbasin}"
+    # Make path for output files
+    filename_out = f"{configs['filename_out']}_{strbasin}"
+    output_dir = pathlib.Path("cymep-data/")
+    output_dir.mkdir(exist_ok=True)
 
     for ii, (model, model_config) in enumerate(configs["models"].items()):
         print("-----------------------------------------------------------------------")
@@ -185,8 +188,6 @@ def main():
             fill_missing_pressure_wind(tracks)
 
         # Filter observational records
-        if configs["debug_level"] >= 1:
-            print("DEBUG1: Storms originally: ", len(tracks.groupby("track_id")))
         tracks = filter_tracks(
             tracks,
             configs["do_special_filter_obs"] and ii == 0,
@@ -197,10 +198,6 @@ def main():
             configs["enyr"],
             configs["truncate_years"],
         )
-
-        if configs["debug_level"] >= 1:
-            print("DEBUG1: Storms after time filter: ", len(tracks.groupby("track_id")))
-        #########################################
 
         # Initialize nan'ed arrays specific to this traj file
         nstorms = len(set(tracks.track_id.data))
@@ -286,9 +283,7 @@ def main():
             coords=dict(storm=np.arange(len(xgyear))),
         )
 
-        filtered_storm_data.to_netcdf(
-            f"./csv-files/storms_{csvfilename_out}_{model}_output.nc"
-        )
+        filtered_storm_data.to_netcdf(output_dir / f"storms_{filename_out}_{model}.nc")
 
         # Bin storms per dataset per calendar month
         for jj, month in enumerate(months):
@@ -333,21 +328,6 @@ def main():
                 ds_out.py_latgen[ii, yrix] = np.nanmean(
                     np.where(xgyear == year, np.absolute(xglat), float("NaN"))
                 )
-
-        # Calculate control interannual standard deviations
-        if ii == 0:
-            stdy_ds = xr.Dataset(
-                data_vars=dict(
-                    sdy_count=("model", [np.nanstd(ds_out.py_count[ii, :])]),
-                    sdy_tcd=("model", [np.nanstd(ds_out.py_tcd[ii, :])]),
-                    sdy_ace=("model", [np.nanstd(ds_out.py_ace[ii, :])]),
-                    sdy_pace=("model", [np.nanstd(ds_out.py_pace[ii, :])]),
-                    sdy_lmi=("model", [np.nanstd(ds_out.py_lmi[ii, :])]),
-                    sdy_latgen=("model", [np.nanstd(ds_out.py_latgen[ii, :])]),
-                ),
-                coords=dict(model=[models[0]]),
-            )
-            stdy_ds.to_netcdf(f"csv-files/means_{csvfilename_out}_climo_mean.nc")
 
         # Calculate annual averages
         ds_out.uclim_count[ii] = np.nansum(ds_out.pm_count[ii, :])
@@ -446,26 +426,24 @@ def main():
     rxy_ds = spatial_correlations(ds_out, models, denslatwgt)
 
     # Temporal correlation calculations
-    # Spearman Rank
-    rs_ds = xr.Dataset(coords=dict(model=models))
-    # Pearson correlation
-    rp_ds = xr.Dataset(coords=dict(model=models))
     for jj in ds_out:
         if "pm_" in jj:
             # Swap per month strings with corr prefix and init dict key
+            # Spearman Rank
             repStr = jj.replace("pm_", "rs_")
-            rs_ds[repStr] = ("model", np.empty(nfiles))
+            ds_out[repStr] = ("model", np.empty(nfiles))
 
+            # Pearson correlation
             repStr_p = jj.replace("pm_", "rp_")
-            rp_ds[repStr_p] = ("model", np.empty(nfiles))
+            ds_out[repStr_p] = ("model", np.empty(nfiles))
             for ii in range(len(configs["models"])):
                 # Create tmp vars and find nans
                 tmpx = ds_out[jj][0, :]
                 tmpy = ds_out[jj][ii, :]
                 nas = np.logical_or(np.isnan(tmpx), np.isnan(tmpy))
 
-                rs_ds[repStr][ii], tmp = sps.spearmanr(tmpx[~nas], tmpy[~nas])
-                rp_ds[repStr_p][ii], tmp = sps.pearsonr(tmpx[~nas], tmpy[~nas])
+                ds_out[repStr][ii], tmp = sps.spearmanr(tmpx[~nas], tmpy[~nas])
+                ds_out[repStr_p][ii], tmp = sps.pearsonr(tmpx[~nas], tmpy[~nas])
 
     # Generate Taylor dict
     tayvars = [
@@ -496,11 +474,24 @@ def main():
             (ds_out.uclim_count[ii] - ds_out.uclim_count[0]) / ds_out.uclim_count[0]
         )
 
-    # Write out primary stats files
-    ds_ay_as = ds_out[[var for var in ds_out if ("uclim_" in var or "utc_" in var)]]
-    xr.merge([rxy_ds, rs_ds, rp_ds, ds_ay_as]).to_netcdf(
-        f"csv-files/metrics_{csvfilename_out}.nc"
+    # ----------------------------------------------------------------------------------
+    # Write output data
+    # Calculate control interannual standard deviations
+    stdy_ds = xr.Dataset(
+        data_vars=dict(
+            sdy_count=("model", [np.nanstd(ds_out.py_count[0, :])]),
+            sdy_tcd=("model", [np.nanstd(ds_out.py_tcd[0, :])]),
+            sdy_ace=("model", [np.nanstd(ds_out.py_ace[0, :])]),
+            sdy_pace=("model", [np.nanstd(ds_out.py_pace[0, :])]),
+            sdy_lmi=("model", [np.nanstd(ds_out.py_lmi[0, :])]),
+            sdy_latgen=("model", [np.nanstd(ds_out.py_latgen[0, :])]),
+        ),
+        coords=dict(model=[models[0]]),
     )
+    stdy_ds.to_netcdf(output_dir / f"means_{filename_out}.nc")
+
+    # Write out primary stats files
+    ds_out = xr.merge([rxy_ds, ds_out])
 
     # Write NetCDF file
     ds_out = ds_out[
@@ -515,16 +506,23 @@ def main():
         strbasin=strbasin,
         do_special_filter_obs=str(configs["do_special_filter_obs"]),
         do_fill_missing_pw=str(configs["do_fill_missing_pw"]),
-        csvfilename=configs["filename_out"] + ".csv",
         truncate_years=str(configs["truncate_years"]),
         do_defineMIbypres=str(configs["do_defineMIbypres"]),
         gridsize=configs["gridsize"],
         description="Coastal metrics processed data",
         history="Created " + datetime.today().strftime("%Y-%m-%d-%H:%M:%S"),
     )
-    netcdfdir = "./netcdf-files/"
-    os.makedirs(os.path.dirname(netcdfdir), exist_ok=True)
-    ds_out.to_netcdf(f"{netcdfdir}/netcdf_{strbasin}_{configs['filename_out']}.nc")
+
+    ds_out.to_netcdf(output_dir / f"diags_{filename_out}.nc")
+
+
+def main():
+    parser = ArgumentParser()
+    parser.add_argument("config_filename")
+
+    args = parser.parse_args()
+
+    generate_diagnostics(args.config_filename)
 
 
 if __name__ == "__main__":

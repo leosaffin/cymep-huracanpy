@@ -2,138 +2,120 @@
 
 [![DOI](https://zenodo.org/badge/263738878.svg)](https://zenodo.org/badge/latestdoi/263738878)
 
-Zarzycki, C. M., Ullrich, P. A., and Reed, K. A. (2021). Metrics for evaluating tropical cyclones in climate data. *Journal of Applied Meteorology and Climatology*. doi: 10.1175/JAMC-D-20-0149.1. [Preprint PDF](https://colinzarzycki.com/papers/ZUR_metrics.pdf). [Supplemental PDF](https://colinzarzycki.com/papers/ZUR_metrics_SI.pdf).
+[Zarzycki, C. M., Ullrich, P. A., and Reed, K. A. (2021). Metrics for evaluating tropical cyclones in climate data. *Journal of Applied Meteorology and Climatology*. doi: 10.1175/JAMC-D-20-0149.1.](https://doi.org/10.1175/JAMC-D-20-0149.1)
 
-This directory (the root) is defined as `${CYMEP}`. The released version of CyMeP is stored in `${CYMEP}/cymep/`.
+## General workflow
+1. Create a YAML configuration file
+2. Run cymep
+3. Run cymep-graphics
 
-### General workflow
-1. Add TempestExtremes ASCII trajectories to ./traj/
-2. Create a configuration .csv file in ./config-lists/
-3. Edit user settings in cymep.py
-4. Run cymep.py
-5. Run graphics-cymep.sh
+## 0. Install cymep and dependencies
 
-### 0. Install dependencies
-
-The actual statistics package is all written in Python3 and requires several libraries. The easiest way to install relevant things is via `conda install`. `pip` or the full Anaconda package may also be an option. Required Python packages are:
-
+```bash
+pip install .
 ```
-numpy
-pandas
-scipy
-netCDF4
+**NOTE**: Currently will install the most recent revision of `huracanpy` directly from the master branch on github
+
+
+## 1. Create a YAML configuration file
+Example for `examples/example_config.yaml`
+
+### 1.1 Configure options
+
+```yaml
+# cymep configuration
+filename_out: "rean_configs"
+basin: 1
+gridsize: 8.0
+styr: 1980
+enyr: 2019
+stmon: 1
+enmon: 12
+truncate_years: False
+THRESHOLD_ACE_WIND: # wind speed (in m/s) to threshold ACE. None means off.
+THRESHOLD_PACE_PRES:  # slp (in hPa) to threshold PACE. None means off.
+do_special_filter_obs: True  # Special "if" block for first line (control)
+do_fill_missing_pw: True
+do_defineMIbypres: False
+```
+| Variable              | Value             | Description                                                                                                        |
+|-----------------------|-------------------|--------------------------------------------------------------------------------------------------------------------|
+| filename_out          | rean_configs      |                                                                                                                    |
+| basin                 | 1                 | Set to negative to turn off filtering, otherwise specify particular ocean basin/hemisphere based on mask functions |
+| gridsize              | 8.0               | Length of side of each square gridbox used for spatial analysis in degrees                                         |
+| styr                  | 1980              | Start year for overlapping interannual correlation analysis                                                        |
+| enyr                  | 2019              | End year for overlapping interannual correlation analysis                                                          |
+| stmon                 | 1                 | First month to include in climatology                                                                              |
+| enmon                 | 12                | Last month to include in climatology                                                                               |
+| truncate_years        | False             | If `True` then filter out years external to styr and enyr. If `False` keep all data                                |
+| THRESHOLD_ACE_WIND    | None              | Select threshold wind (in m/s) for ACE calculations (leave empty for no threshold)                                 |
+| THRESHOLD_PACE_PRES   | None              | Select threshold SLP (in hPa) for PACE calculations (leave empty for no threshold)                                 |
+| do_special_filter_obs | True              | Apply a wind-speed threshold of 17.5 to the reference set of tracks? (`False` for no filter)                       |
+| do_fill_missing_pw    | True              | Fill missing data with observed pressure-wind curve? (`False` leaves data as missing)                              |
+| do_defineMIbypres     | False             | Define maximum intensity location by PSL instead of wind? (`False` uses wind)                                      |
+
+### 1.2 Add model configurations
+
+```yaml
+load_keywords:
+  # Keywords passed to huracanpy.load(). Specified here for keywords used for every
+  # model and individually for each model if they have additional keywords
+  tracker: tempestextremes
+  tempest_extremes_unstructured: False
+  variable_names:
+    - slp
+    - wind
+    - unknown
+models:
+  OBS:
+    filename: ibtracs-1980-2019-GLOB.v4.txt
+    load_keywords: {}
+    ensmembers: 1
+    yearspermember: 40
+    windcorrs: 1.0
+
+  ERAI:
+    filename: trajectories.txt.ERAI
+    load_keywords: {}
+    ensmembers: 1
+    yearspermember: 39
+    windcorrs: 1.0
+
+...
 ```
 
-Or you can use the configuration file included in this repository:
+| Variable       | Value                         | Description                                                                                                       |
+|----------------|-------------------------------|-------------------------------------------------------------------------------------------------------------------|
+|                | OBS                           | "Shortname" used for plotting, data output                                                                        | 
+| filename       | ibtracs-1980-2019-GLOB.v4.txt | Trajectory file name                                                                                              |
+| load_keyword   | Empty dictionary              | Keywords passed to [`huracanpy.load`](https://huracanpy.readthedocs.io/en/latest/api/loading.html#huracanpy.load) |
+| ensmembers     | 1                             | Number of ensemble members included in trajectory file                                                            |
+| yearspermember | 40                            | Number of years per ensemble member in trajectory file                                                            |
+| windcorrs      | 1.0                           | Wind speed correction factor                                                                                      |
 
-```
-conda env create -n cymep --file configuration.yaml 
-conda activate cymep   
-```
-
-Also required for graphic generation (`graphics-cymep`) is NCL. NCL can either be installed from [source or binary](https://www.ncl.ucar.edu/Download/), MacPorts, or via [conda](https://www.ncl.ucar.edu/Download/conda.shtml). The latter is preferred.
-
-### 1. Add trajectory files to ./traj/ folder.
-
-Currently these files must be in "Tempest" ASCII format (a derivative of the old "GFDL" format, for those who understand what that means!):
-
-```
-start   31      1980    1       6       6
-        482     303     120.500000      -14.250000      9.987638e+04    1.464815e+01    0.000000e+00    1980    1       6       6
-        476     301     119.000000      -14.750000      9.981100e+04    1.398848e+01    0.000000e+00    1980    1       6       12
-        476     300     119.000000      -15.000000      9.953694e+04    1.369575e+01    0.000000e+00    1980    1       6       18
-       
-        ...
-```
-
-where each trajectory has a header line beginning with `start` followed by the number of points in the trajectory (ex: 31) and the start date of the trajectory in YYYY MM DD HH.
-
-Each subsequent line (31 lines) contains a point along the trajectory. Currently, this is hardcoded such that the columns are defined thusly:
-
-
-| index | label | description  |
-| --- | --- | ---  |
-| 1 | ix | i-index (currently ignored)  |
-| 2 | jx | j-index (currently ignored) |
-| 3 | lon | longitude (degrees east)  |
-| 4 | lat | longitude (degrees north)  |
-| 5 | slp | sea level pressure (Pa)  |
-| 6 | wind | wind speed (m/s) |
-| 7 | phis | surface geopotential (m<sup>2</sup>/s<sup>2</sup>)  |
-| 8 | yyyy | year integer |
-| 9 | mm | month integer  |
-| 10 | dd | day integer  |
-| 11 | hh | hour integer (GMT)  |
-
-There are two folders within the package that may be helpful:
-
-1. An example of generating a TempestExtremes trajectory file from reanalysis is found in `${CYMEP}/tempest-tc/`. This script reads in MERRA2 data and generates a track file on NCAR Cheyenne.
-2. Sample scripts for creating alternative formats can be found in `${CYMEP}/convert-traj/`. For example, one could use `ibtracs_to_tempest.ncl` to generate a text-based file compatibile with the software package from an IBTrACS NetCDF file.
-
-### 2. Create a CSV file describing model configurations
-
-Example for `rean_configs.csv`
-
-```
-ibtracs-1980-2019-GLOB.v4.txt,OBS,False,1,40,1.0
-trajectories.txt.ERAI,ERAI,False,1,39,1.0
-trajectories.txt.CR20,20CRv3,False,1,36,1.0
-trajectories.txt.MERRA,MERRA,False,1,36,0.85
-trajectories.txt.MERRA2,MERRA2,False,1,39,0.85
-trajectories.txt.JRA,JRA,False,1,39,0.98
-trajectories.txt.CFSR,CFSR,False,1,39,0.883
-trajectories.txt.ERA5,ERA5,False,1,39,1.0
-```
-
-Using the first line as an example...
-
-| Variable | Description |
-| --- | --- |
-| ibtracs-1980-2019-GLOB.v4.txt | Trajectory file name in traj dir |
-| OBS | "Shortname" used for plotting, data output |
-| False | Is the traj file unstructured? (1-D column indices instead of 2-D) |
-| 1 | Number of ensemble members included in trajectory file |
-| 40 | Number of years per ensemble member in trajectory file |
-| 1.0 | Wind speed correction factor |
-
-**NOTE**: The first line will be defined as the reference, so this should *always* be either observations or some sort of model/configuration control.
+**NOTE**: The first entry will be defined as the reference, so this should *always* be either observations or some sort of model/configuration control.
 
 **NOTE**: The wind speed correction factor is a multiplier on the "wind" variable in the trajectory file to normalized from lowest model level to some reference height (e.g., lowest model level to 10m winds for TCs).
 
-### 3. Edit cymep.py
+## 2. Run cymep
 
-| Variable | Description |
-| --- | --- |
-| gridsize | Length of side of each square gridbox used for spatial analysis in degrees (e.g., 8.0) |
-| basin | Set to negative to turn off filtering, otherwise specify particular ocean basin/hemisphere based on mask functions |
-| csvfilename | The name of the file stored in `config_files` that contains the list of files to be analyzed |
-| styr | Start year for overlapping interannual correlation analysis |
-| enyr | End year for overlapping interannual correlation analysis |
-| truncate_years | If `True` then filter out years external to styr and enyr. If `False` keep all data |
-| do_defineMIbypres | Define maximum intensity location by PSL instead of wind? (default: False = wind) |
-| do_fill_missing_pw | Fill missing data with observed pressure-wind curve? (False leaves data as missing) |
-| do_special_filter_obs | Do we have special observational filtering? (if true, code modifications needed) |
-| THRESHOLD_ACE_WIND | Select threshold wind (in m/s) for ACE calculations (negative value means no threshold) |
-| THRESHOLD_PACE_PRES | Select threshold SLP (in hPa) for PACE calculations (negative value means no threshold) |
-
-**NOTE**: if you have a non-TempestExtremes-TC configuration, you need to modify the array extraction found by grepping for `USER_MODIFY` in `cymep.py`.
-
-### 4. Run cymep.py
-
-Finally, run cymep.
-
-```
-$> python cymep.py
+```bash
+$> cymep config.yaml
 ```
 
-This will produce two sets of files. One, a handful of CSV files in `${CYMEP}/cymep/csv-files/`. Two, a NetCDF file in `${CYMEP}/cymep/netcdf-files/`.
+This will produce a handful of netCDF files in `cymep-data/`.
+- `"diags_{filename_out}_{basin}.nc"` The main set of output diagnostics
+- `"means_{filename_out}_{basin}.nc"` Climatologies computed from the reference model
+- `"storms_{filename_out}_{basin}_{model}.nc"` One file per model with metrics for each individual storm in the dataset
 
-NOTE: Eventually, the `csv-files` folder will become obsolete and all output from the suite will be packaged via NetCDF.
+## 3. Run cymep-graphics
 
-### 5. Run graphics-cymep.sh
-
+```bash
+$> cymep-graphics config.yaml
 ```
-$> ./graphics-cymep.sh netcdf-files/netcdf_GLOB_rean_configs.nc
-```
 
-This will produce a suite of figures in various subfolders within `./fig/`.
+This will produce a suite of figures in various subfolders within `cymep-figs/`.
+- `line/`
+- `spatial/`
+- `tables/`
+- `taylor/`
