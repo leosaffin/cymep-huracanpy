@@ -79,9 +79,7 @@ def initialise_arrays(datasets, years, months, denslon, denslat):
     return ds_out
 
 
-def filter_tracks(
-        tracks, special_filter_obs, basin, stmon, enmon, styr, enyr, truncate_years
-):
+def filter_tracks(tracks, special_filter_obs, basin, months, years, truncate_years):
     # if "control" record and do_special_filter_obs = true, we can apply specific
     # criteria here to match objective tracks better
     # for example, ibtracs includes tropical depressions, eliminate these to get WMO
@@ -106,26 +104,13 @@ def filter_tracks(
         tracks = tracks.where(tracks.track_id.isin(track_ids_to_keep), drop=True)
 
     # Mask TCs based on temporal characteristics
-    tracks_to_keep = []
-    for track_id, track in tracks.groupby("track_id"):
-        maskoff = False
-        orimon = track.time.dt.month[0]
-        oriyear = track.time.dt.year[0]
-        # End month < start month. Account for wrap around in years
-        if enmon <= stmon:
-            if enmon < orimon < stmon:
-                maskoff = True
-        else:
-            if orimon < stmon or orimon > enmon:
-                maskoff = True
-        if truncate_years:
-            if oriyear < styr or oriyear > enyr:
-                maskoff = True
+    origin = tracks.groupby("track_id").first()
+    valid_times = origin.time.dt.month.isin(months)
+    if truncate_years:
+        valid_times = valid_times & origin.time.dt.year.isin(years)
 
-        if not maskoff:
-            tracks_to_keep.append(track_id)
-
-    tracks = tracks.where(tracks.track_id.isin(tracks_to_keep), drop=True)
+    track_ids_to_keep = origin.track_id.where(valid_times)
+    tracks = tracks.where(tracks.track_id.isin(track_ids_to_keep), drop=True)
 
     return tracks
 
@@ -192,10 +177,8 @@ def generate_diagnostics(config_filename):
             tracks,
             configs["do_special_filter_obs"] and ii == 0,
             configs["basin"],
-            configs["stmon"],
-            configs["enmon"],
-            configs["styr"],
-            configs["enyr"],
+            months,
+            years,
             configs["truncate_years"],
         )
 
