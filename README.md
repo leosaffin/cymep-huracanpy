@@ -27,9 +27,11 @@ The first part of the yaml file has options for how cymep performs the analysis
 # A tag to identify data and figures output by cymep using this configuration
 filename_out: "rean_configs"
 
-# Specify particular ocean basin/hemisphere based on mask functions
-# Set to negative to turn off filtering
-basin: 1
+# Specify particular ocean basin or hemisphere
+# Basins - NATL, ENP, CP, WNP, NI, MED, SI, AUS, SP, SA, SH
+# Use "N" or "S" to specify hemisphere
+# Leave empty for global
+basin: "NATL"
 
 # Length of side of each square gridbox used for spatial analysis in degrees
 gridsize: 8.0

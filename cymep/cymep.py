@@ -10,7 +10,7 @@ import scipy.stats as sps
 
 import huracanpy
 
-from cymep.mask_tc import maskTC, getbasinmaskstr, fill_missing_pressure_wind
+from cymep.mask_tc import fill_missing_pressure_wind
 from cymep.track_density import track_density, track_mean, track_minmax, create_grid
 from cymep.pattern_cor import spatial_correlations, taylor_stats
 
@@ -80,7 +80,7 @@ def initialise_arrays(datasets, years, months, denslon, denslat):
 
 
 def filter_tracks(
-    tracks, special_filter_obs, basin, stmon, enmon, styr, enyr, truncate_years
+        tracks, special_filter_obs, basin, stmon, enmon, styr, enyr, truncate_years
 ):
     # if "control" record and do_special_filter_obs = true, we can apply specific
     # criteria here to match objective tracks better
@@ -92,17 +92,18 @@ def filter_tracks(
         tracks = tracks.where(tracks.wind > windthreshold, drop=True)
 
     # Mask TCs for particular basin based on genesis location
-    tracks_in_basin = []
-    if basin > 0:
-        for track_id, track in tracks.groupby("track_id"):
-            if basin == 20 or basin == 21:
-                test_basin = maskTC(track.lat[0], track.lon[0], dohemi=True)
-            else:
-                test_basin = maskTC(track.lat[0], track.lon[0])
-            if test_basin == basin:
-                tracks_in_basin.append(track_id)
+    if basin is not None:
+        if basin in ["N", "H"]:
+            tracks["basin"] = huracanpy.utils.geography.get_hemispher(tracks.lon, tracks.lat)
+        else:
+            tracks["basin"] = huracanpy.utils.geography.get_basin(tracks.lon, tracks.lat)
 
-    tracks = tracks.where(tracks.track_id.isin(tracks_in_basin), drop=True)
+        # Determine if track is in basin by whether it has an Ocean point in the basin
+        tracks["land"] = huracanpy.utils.geography.get_land_or_ocean(tracks.lon, tracks.lat)
+        tracks_ = tracks.where((tracks.basin == basin) & (tracks.land == "Ocean"), drop=True)
+
+        track_ids_to_keep = list(set(tracks_.track_id.values))
+        tracks = tracks.where(tracks.track_id.isin(track_ids_to_keep), drop=True)
 
     # Mask TCs based on temporal characteristics
     tracks_to_keep = []
@@ -153,11 +154,8 @@ def generate_diagnostics(config_filename):
     # Initialize global numpy array/dicts
     ds_out = initialise_arrays(datasets, years, months, denslon, denslat)
 
-    # Get basin string
-    strbasin = getbasinmaskstr(configs["basin"])
-
     # Make path for output files
-    filename_out = f"{configs['filename_out']}_{strbasin}"
+    filename_out = f"{configs['filename_out']}_{configs['basin']}"
     output_dir = pathlib.Path("cymep-data/")
     output_dir.mkdir(exist_ok=True)
 
@@ -505,7 +503,7 @@ def generate_diagnostics(config_filename):
     ]
     # Package a series of global package inputs for storage as NetCDF attributes
     ds_out.attrs = dict(
-        strbasin=strbasin,
+        strbasin=configs['basin'],
         do_special_filter_obs=str(configs["do_special_filter_obs"]),
         do_fill_missing_pw=str(configs["do_fill_missing_pw"]),
         truncate_years=str(configs["truncate_years"]),
