@@ -36,6 +36,9 @@ basin: "NATL"
 # Length of side of each square gridbox used for spatial analysis in degrees
 gridsize: 8.0
 
+# Extra region around the gridbox used for spatial analysis if focused on a single basin
+grid_buffer: 10.0
+
 # Start and end year for overlapping interannual correlation analysis
 styr: 1980
 enyr: 2019

@@ -6,6 +6,7 @@ from datetime import datetime
 
 import numpy as np
 import xarray as xr
+from iris.analysis.cartography import wrap_lons
 import scipy.stats as sps
 
 import huracanpy
@@ -92,7 +93,7 @@ def filter_tracks(tracks, special_filter_obs, basin, months, years, truncate_yea
     # Mask TCs for particular basin based on genesis location
     if basin is not None:
         if basin in ["N", "H"]:
-            tracks["basin"] = huracanpy.utils.geography.get_hemispher(tracks.lon, tracks.lat)
+            tracks["basin"] = huracanpy.utils.geography.get_hemisphere(tracks.lon, tracks.lat)
         else:
             tracks["basin"] = huracanpy.utils.geography.get_basin(tracks.lon, tracks.lat)
 
@@ -132,8 +133,9 @@ def generate_diagnostics(config_filename):
         months = list(range(configs["stmon"], configs["enmon"] + 1))
 
     # Generate grid for spatial patterns
-    lonstart = 0.0
-    denslon, denslat = create_grid(configs["gridsize"], lonstart)
+    denslon, denslat, wrap_point = create_grid(
+        configs["gridsize"], configs["basin"], configs["grid_buffer"]
+    )
     denslatwgt = np.cos(np.deg2rad(0.5 * (denslat[:-1] + denslat[1:])))
 
     # Initialize global numpy array/dicts
@@ -166,7 +168,7 @@ def generate_diagnostics(config_filename):
         )
         tracks["slp"] = tracks.slp / 100.0
         tracks["wind"] = tracks.wind * dataset_config["windcorrs"]
-        tracks["lon"] = tracks.lon % 360
+        tracks["lon"] = wrap_lons(tracks.lon, wrap_point, 360)
 
         # Fill in missing values of pressure and wind
         if configs["do_fill_missing_pw"]:

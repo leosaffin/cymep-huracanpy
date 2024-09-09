@@ -1,12 +1,60 @@
+import warnings
+
+import shapely
+from shapely.affinity import translate
 import numpy as np
+from iris.analysis.cartography import wrap_lons
+
+from huracanpy.utils.geography import basins_def
 
 
-def create_grid(gridsize, lonstart):
-    # =================== Create grid ==================================
-    latS = -90.0
-    latN = 90.0
-    lonW = lonstart
-    lonE = lonstart + 360.0
+def create_grid(gridsize, basin, buffer, wrap_point=-180):
+    if basin is None:
+        lonW, latS, lonE, latN = -180, -90, 180, 90
+    elif basin == "N":
+        lonW, latS, lonE, latN = -180, 0, 180, 90
+    elif basin == "S":
+        lonW, latS, lonE, latN = -180, -90, 180, 0
+    else:
+        try:
+            lonW, latS, lonE, latN = basins_def["WMO"].loc[basin].geometry.exterior.bounds
+        except AttributeError:
+            # If the basin crosses the dateline it will be specified as a multipolygon
+            # In this case we don't want the exterior of this multipolygon we want to
+            # shift our longitudes so that they cross the dateline
+            wrap_point = 0
+            geoms = basins_def["WMO"].loc[basin].geometry.geoms
+            geoms_translated = []
+            for geom in geoms:
+                if (np.array(geom.exterior.xy[0]) < wrap_point).all():
+                    geoms_translated.append(translate(geom, xoff=360))
+                elif (np.array(geom.exterior.xy[0]) < wrap_point).any():
+                    raise ValueError(f"Can't merge geometry for {basin}")
+                else:
+                    geoms_translated.append(geom)
+
+            geom = shapely.unary_union(geoms_translated)
+            lonW, latS, lonE, latN = geom.exterior.bounds
+
+        if buffer is not None:
+            latS = max(latS - buffer, -90)
+            latN = min(latN + buffer, 90)
+
+            lonW = lonW - buffer
+            lonE = lonE + buffer
+
+            if lonE - lonW >= 360:
+                warnings.warn(
+                    f"basin={basin} and grid_buffer={buffer} covers all longitudes"
+                )
+                lonW = wrap_point
+                lonE = wrap_point + 360
+
+            elif lonW < wrap_point or lonE > wrap_point + 360:
+                # Put the wrap point somewhere between lonW and lonE
+                wrap_point = lonW - (lonE - 360)
+                lonW, lonE = wrap_lons(np.array(lonW, lonE), wrap_point, 360)
+
 
     dlat = gridsize
     dlon = gridsize
@@ -17,7 +65,7 @@ def create_grid(gridsize, lonstart):
     lat = np.linspace(latS, latN, num=nlat)
     lon = np.linspace(lonW, lonE, num=mlon)
 
-    return lon, lat
+    return lon, lat, wrap_point
 
 
 def track_density(clat, clon, glat, glon, setzeros):
@@ -33,6 +81,15 @@ def track_density(clat, clon, glat, glon, setzeros):
 
 
 def track_mean(clat, clon, glat, glon, cvar, meanornot, minhits):
+    npoints = len(clat)
+    out_of_bounds = (clon < glon[0]) | (clon >= glon[-1]) | (clat < glat[0]) | (clat >= glat[-1])
+
+    clon = clon[~out_of_bounds]
+    clat = clat[~out_of_bounds]
+    cvar = cvar[~out_of_bounds]
+
+    print(f"Track mean. Removed {npoints - len(clon)} points out of {npoints}")
+
     xidx = np.digitize(clon, glon) - 1
     yidx = np.digitize(clat, glat) - 1
 
@@ -59,6 +116,15 @@ def track_mean(clat, clon, glat, glon, cvar, meanornot, minhits):
 
 
 def track_minmax(clat, clon, glat, glon, cvar, statistic):
+    npoints = len(clat)
+    out_of_bounds = (clon < glon[0]) | (clon >= glon[-1]) | (clat < glat[0]) | (clat >= glat[-1])
+
+    clon = clon[~out_of_bounds]
+    clat = clat[~out_of_bounds]
+    cvar = cvar[~out_of_bounds]
+
+    print(f"Track minmax. Removed {npoints - len(clon)} points out of {npoints}")
+
     xidx = np.digitize(clon, glon) - 1
     yidx = np.digitize(clat, glat) - 1
 
