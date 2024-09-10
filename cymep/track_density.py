@@ -55,7 +55,6 @@ def create_grid(gridsize, basin, buffer, wrap_point=-180):
                 wrap_point = lonW - (lonE - 360)
                 lonW, lonE = wrap_lons(np.array(lonW, lonE), wrap_point, 360)
 
-
     dlat = gridsize
     dlon = gridsize
 
@@ -65,7 +64,11 @@ def create_grid(gridsize, basin, buffer, wrap_point=-180):
     lat = np.linspace(latS, latN, num=nlat)
     lon = np.linspace(lonW, lonE, num=mlon)
 
-    return lon, lat, wrap_point
+    weights = np.cos(np.deg2rad(0.5 * (lat[:-1] + lat[1:])))
+    weights = np.expand_dims(weights, axis=1)
+    weights = np.repeat(weights, mlon - 1, axis=1)
+
+    return lon, lat, weights, wrap_point
 
 
 def track_density(clat, clon, glat, glon, setzeros):

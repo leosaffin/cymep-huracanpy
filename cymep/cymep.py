@@ -133,10 +133,9 @@ def generate_diagnostics(config_filename):
         months = list(range(configs["stmon"], configs["enmon"] + 1))
 
     # Generate grid for spatial patterns
-    denslon, denslat, wrap_point = create_grid(
+    denslon, denslat, denslatwgt, wrap_point = create_grid(
         configs["gridsize"], configs["basin"], configs["grid_buffer"]
     )
-    denslatwgt = np.cos(np.deg2rad(0.5 * (denslat[:-1] + denslat[1:])))
 
     # Initialize global numpy array/dicts
     ds_out = initialise_arrays(datasets, years, months, denslon, denslat)
@@ -447,7 +446,7 @@ def generate_diagnostics(config_filename):
     # Calculate Taylor stats and put into taylor dict
     for ii in range(nfiles):
         ratio = taylor_stats(
-            ds_out.fulldens[ii, :, :], ds_out.fulldens[0, :, :], denslatwgt, 0
+            ds_out.fulldens[ii, :, :].values, ds_out.fulldens[0, :, :].values, denslatwgt
         )
         for ix, x in enumerate(tayvars):
             ds_out[x][ii] = ratio[ix]
@@ -479,13 +478,6 @@ def generate_diagnostics(config_filename):
     ds_out = xr.merge([rxy_ds, ds_out])
 
     # Write NetCDF file
-    ds_out = ds_out[
-        [
-            var
-            for var in ds_out
-            if ("pm_" in var or "py_" in var or "full" in var or "tay_" in var)
-        ]
-    ]
     # Package a series of global package inputs for storage as NetCDF attributes
     ds_out.attrs = dict(
         strbasin=configs['basin'],
