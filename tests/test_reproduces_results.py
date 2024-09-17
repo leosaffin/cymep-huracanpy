@@ -1,7 +1,6 @@
 import os
 import pathlib
 
-import numpy as np
 import xarray as xr
 
 from cymep import cymep
@@ -23,14 +22,9 @@ def test_all():
             del ds_old.attrs["history"]
             del ds.attrs["history"]
 
-        for var in ds_old:
-            print(var)
-            if var != "dataset":
-                np.testing.assert_allclose(ds[var].values, ds_old[var].values, rtol=1e-12)
-        #assert ds_old.identical(ds)
+        assert ds_old.identical(ds)
 
-
-    #remove_new_files()
+    remove_new_files()
 
 
 def remove_new_files():
