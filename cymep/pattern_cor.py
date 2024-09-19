@@ -1,35 +1,107 @@
 import numpy as np
 import xarray as xr
+from scipy.stats import pearsonr, spearmanr
 
 
-def spatial_correlations(
-    ms_ds, datasets, weights, names=dict(
-        rxy_track="fulldens",
-        rxy_gen="fullgen",
-        rxy_u10="fullwind",
-        rxy_slp="fullpres",
-        rxy_ace="fullace",
-        rxy_pace="fullpace",
-    )
-):
-    nfiles = len(datasets)
-    rxy_ds = xr.Dataset(coords=dict(dataset=datasets))
+def spatial_correlations(ds, weights):
+    rxy_ds = xr.Dataset(coords=dict(dataset=ds.dataset))
 
-    for name_out, name_in in names.items():
-        correlations = []
-        x = ms_ds[name_in][0, :, :].values
-        for ii in range(nfiles):
-            y = ms_ds[name_in][ii, :, :].values
+    for name in ds:
+        if "full" in name and "bias" not in name:
+            correlations = []
+            x = ds[name][0, :, :].values
+            for ii, dataset in enumerate(ds.dataset):
+                y = ds[name][ii, :, :].values
+                correlations.append(wpearsonr(*filter_nans([x, y], [x, y, weights])))
 
-            if "wind" in name_in or "pres" in name_in:
-                correlation = wpearsonr(*filter_nans([x, y], [x, y, weights]))
-            else:
-                correlation = wpearsonr(x, y, weights)
-            correlations.append(correlation)
-
-        rxy_ds[name_out] = ("dataset", np.array(correlations))
+            rxy_ds[name.replace("full", "rxy_")] = ("dataset", np.array(correlations))
 
     return rxy_ds
+
+
+def temporal_correlations(ds):
+    nfiles = len(ds.dataset)
+    corr_ds = xr.Dataset(coords=dict(dataset=ds.dataset))
+
+    # Temporal correlation calculations
+    for name in ds:
+        if "pm_" in name:
+            # Swap per month strings with corr prefix and init dict key
+            # Spearman Rank
+            repStr = name.replace("pm_", "rs_")
+            corr_ds[repStr] = ("dataset", np.empty(nfiles))
+
+            # Pearson correlation
+            repStr_p = name.replace("pm_", "rp_")
+            corr_ds[repStr_p] = ("dataset", np.empty(nfiles))
+            for ii in range(nfiles):
+                # Create tmp vars and find nans
+                tmpx = ds[name][0, :].values
+                tmpy = ds[name][ii, :].values
+                tmpx, tmpy = filter_nans([tmpx, tmpy], [tmpx, tmpy])
+
+                corr_ds[repStr][ii], tmp = spearmanr(tmpx, tmpy)
+                corr_ds[repStr_p][ii], tmp = pearsonr(tmpx, tmpy)
+
+    return corr_ds
+
+
+def taylor_stats_ds(ds, weights):
+    nfiles = len(ds.dataset)
+    taylor_ds = xr.Dataset(coords=dict(dataset=ds.dataset))
+    tayvars = [
+        "tay_pc",
+        "tay_ratio",
+        "tay_bias",
+        "tay_xmean",
+        "tay_ymean",
+        "tay_xvar",
+        "tay_yvar",
+        "tay_rmse",
+    ]
+    for x in tayvars:
+        taylor_ds[x] = ("dataset", np.empty(nfiles))
+
+    # Calculate Taylor stats and put into taylor dict
+    for ii in range(nfiles):
+        ratio = taylor_stats(
+            ds.fulldens[ii, :, :].values, ds.fulldens[0, :, :].values, weights
+        )
+        for ix, x in enumerate(tayvars):
+            taylor_ds[x][ii] = ratio[ix]
+
+    # Calculate special bias for Taylor diagrams
+    taylor_ds["tay_bias2"] = ("dataset", np.empty(nfiles))
+    for ii in range(nfiles):
+        taylor_ds.tay_bias2[ii] = 100.0 * (
+            (ds.uclim_count[ii] - ds.uclim_count[0]) / ds.uclim_count[0]
+        )
+
+    return taylor_ds
+
+
+def taylor_stats(x, y, weights):
+    ## x is the test variable
+    ## y is the reference variable (truth or control)
+    ## w is weights, either a scalar, 1-D array (ex: Gaussian) or 2D lat/lon
+    # Calculate pattern correlation
+    pc = wpearsonr(x, y, weights)
+
+    # Calculate averages, variance, and RMSE
+    xmean = np.average(x, weights=weights)
+    ymean = np.average(y, weights=weights)
+    xvar = np.average((x - xmean)**2, weights=weights)
+    yvar = np.average((y - ymean)**2, weights=weights)
+    rmse = np.sqrt(np.average((x - y) ** 2, weights=weights))
+
+    # Calculate bias
+    bias = 100 * (xmean - ymean) / ymean
+
+    # Calculate ratio and update RMSE
+    ratio = np.sqrt(xvar / yvar)
+    rmse = rmse / np.sqrt(yvar)
+
+    return pc, ratio, bias, xmean, ymean, xvar, yvar, rmse
 
 
 def wpearsonr(x, y, weights):
@@ -60,28 +132,3 @@ def filter_zeros(arrays_to_check, arrays_to_filter):
     zeros = (np.array(arrays_to_check) == 0).all(axis=0).flatten()
 
     return _filter(arrays_to_filter, ~zeros)
-
-
-def taylor_stats(x, y, weights):
-    ## x is the test variable
-    ## y is the reference variable (truth or control)
-    ## w is weights, either a scalar, 1-D array (ex: Gaussian) or 2D lat/lon
-
-    # Calculate pattern correlation
-    pc = wpearsonr(x, y, weights)
-
-    # Calculate averages, variance, and RMSE
-    xmean = np.average(x, weights=weights)
-    ymean = np.average(y, weights=weights)
-    xvar = np.average((x - xmean)**2, weights=weights)
-    yvar = np.average((y - ymean)**2, weights=weights)
-    rmse = np.sqrt(np.average((x - y) ** 2, weights=weights))
-
-    # Calculate bias
-    bias = 100 * (xmean - ymean) / ymean
-
-    # Calculate ratio and update RMSE
-    ratio = np.sqrt(xvar / yvar)
-    rmse = rmse / np.sqrt(yvar)
-
-    return pc, ratio, bias, xmean, ymean, xvar, yvar, rmse

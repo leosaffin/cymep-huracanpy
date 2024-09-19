@@ -7,13 +7,12 @@ from datetime import datetime
 import numpy as np
 import xarray as xr
 from iris.analysis.cartography import wrap_lons
-import scipy.stats as sps
 
 import huracanpy
 
 from cymep.mask_tc import fill_missing_pressure_wind
 from cymep.track_density import track_density, track_mean, track_minmax, create_grid
-from cymep.pattern_cor import spatial_correlations, taylor_stats
+from cymep.pattern_cor import spatial_correlations, temporal_correlations, taylor_stats_ds
 
 
 def initialise_arrays(datasets, years, months, denslon, denslat):
@@ -123,7 +122,6 @@ def generate_diagnostics(config_filename):
 
     # Get some useful global values based on input data
     datasets = list(configs["datasets"].keys())
-    nfiles = len(datasets)
     years = list(range(configs["styr"], configs["enyr"] + 1))
     if configs["enmon"] < configs["stmon"]:
         months = list(range(configs["stmon"], 12 + 1)) + list(
@@ -153,14 +151,11 @@ def generate_diagnostics(config_filename):
 
         # Determine the number of years available in our dataset
         if configs["truncate_years"]:
-            # print("Truncating years from "+yearspermember(zz)+" to "+nyears)
             nmodyears = dataset_config["ensmembers"] * len(years)
         else:
-            # print("Using years per member of "+yearspermember(zz))
             nmodyears = dataset_config["ensmembers"] * dataset_config["yearspermember"]
 
         # Extract trajectories from tempest file and assign to arrays
-        # USER_MODIFY
         tracks = huracanpy.load(
             str(input_dir / dataset_config["filename"]),
             **{**configs["load_keywords"], **dataset_config["load_keywords"]},
@@ -331,56 +326,13 @@ def generate_diagnostics(config_filename):
 
     # Back to the main program
     # Spatial correlation calculations
-    rxy_ds = spatial_correlations(ds_out, datasets, denslatwgt)
+    rxy_ds = spatial_correlations(ds_out, denslatwgt)
 
     # Temporal correlation calculations
-    for jj in ds_out:
-        if "pm_" in jj:
-            # Swap per month strings with corr prefix and init dict key
-            # Spearman Rank
-            repStr = jj.replace("pm_", "rs_")
-            ds_out[repStr] = ("dataset", np.empty(nfiles))
-
-            # Pearson correlation
-            repStr_p = jj.replace("pm_", "rp_")
-            ds_out[repStr_p] = ("dataset", np.empty(nfiles))
-            for ii in range(len(configs["datasets"])):
-                # Create tmp vars and find nans
-                tmpx = ds_out[jj][0, :]
-                tmpy = ds_out[jj][ii, :]
-                nas = np.logical_or(np.isnan(tmpx), np.isnan(tmpy))
-
-                ds_out[repStr][ii], tmp = sps.spearmanr(tmpx[~nas], tmpy[~nas])
-                ds_out[repStr_p][ii], tmp = sps.pearsonr(tmpx[~nas], tmpy[~nas])
+    corr_ds = temporal_correlations(ds_out)
 
     # Generate Taylor dict
-    tayvars = [
-        "tay_pc",
-        "tay_ratio",
-        "tay_bias",
-        "tay_xmean",
-        "tay_ymean",
-        "tay_xvar",
-        "tay_yvar",
-        "tay_rmse",
-    ]
-    for x in tayvars:
-        ds_out[x] = ("dataset", np.empty(nfiles))
-
-    # Calculate Taylor stats and put into taylor dict
-    for ii in range(nfiles):
-        ratio = taylor_stats(
-            ds_out.fulldens[ii, :, :].values, ds_out.fulldens[0, :, :].values, denslatwgt
-        )
-        for ix, x in enumerate(tayvars):
-            ds_out[x][ii] = ratio[ix]
-
-    # Calculate special bias for Taylor diagrams
-    ds_out["tay_bias2"] = ("dataset", np.empty(nfiles))
-    for ii in range(nfiles):
-        ds_out.tay_bias2[ii] = 100.0 * (
-            (ds_out.uclim_count[ii] - ds_out.uclim_count[0]) / ds_out.uclim_count[0]
-        )
+    tay_ds = taylor_stats_ds(ds_out, denslatwgt)
 
     # ----------------------------------------------------------------------------------
     # Write output data
@@ -399,7 +351,7 @@ def generate_diagnostics(config_filename):
     stdy_ds.to_netcdf(output_dir / f"means_{filename_out}.nc")
 
     # Write out primary stats files
-    ds_out = xr.merge([rxy_ds, ds_out])
+    ds_out = xr.merge([rxy_ds, corr_ds, tay_ds, ds_out])
 
     # Write NetCDF file
     # Package a series of global package inputs for storage as NetCDF attributes
