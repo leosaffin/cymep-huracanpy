@@ -8,6 +8,8 @@ requires-python = ">=3.8"
 dependencies = [
     "huracanpy@git+https://github.com/Huracan-project/huracanpy",
     "xarray",
+    "pyyaml",
+    "scitools-iris",
 ]
 version="0.1.0"
 
