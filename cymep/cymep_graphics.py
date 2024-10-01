@@ -19,10 +19,15 @@ def generate_plots(config_filename):
 
     # Make path for output files
     path = pathlib.Path("cymep-data/")
+    path.mkdir(exist_ok=True)
+    (path / "line").mkdir(exist_ok=True)
+    (path / "spatial").mkdir(exist_ok=True)
+    (path / "tables").mkdir(exist_ok=True)
+    (path / "taylor").mkdir(exist_ok=True)
+
+    # Load in processed data
     filename = f"{configs['filename_out']}_{configs['basin']}"
     ds = xr.open_dataset(path / f"diags_{filename}.nc")
-
-    filename += "_new"
 
     projection = EqualEarth(central_longitude=ds.lon.values.mean())
 
