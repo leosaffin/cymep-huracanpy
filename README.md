@@ -18,7 +18,8 @@ pip install .
 ## 1. Create a YAML configuration file
 The easiest way to do this is to copy and modify `examples/example_config.yaml` which
 contains all the options as well as descriptions. The options can be split up into two
-parts, shown below.
+parts, shown below. You can also run cymep on the example data by running the commands
+in the examples folder.
 
 ### 1.1 Configure cymep options
 The first part of the yaml file has options for how cymep performs the analysis
