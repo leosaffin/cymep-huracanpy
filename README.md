@@ -12,8 +12,6 @@ For the original CyMeP, see the [github repository](https://github.com/zarzycki/
 ```bash
 pip install .
 ```
-**NOTE**: Currently will install the most recent revision of `huracanpy` directly from the master branch on github
-
 
 ## 1. Create a YAML configuration file
 The easiest way to do this is to copy and modify `examples/example_config.yaml` which
