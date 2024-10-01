@@ -124,7 +124,13 @@ def generate_diagnostics(config_filename):
             str(input_dir / dataset_config["filename"]),
             **{**configs["load_keywords"], **dataset_config["load_keywords"]},
         )
-        tracks["slp"] = tracks.slp / 100.0
+
+        if configs["slp_units"].lower() == "pa":
+            tracks["slp"] = tracks.slp / 100.0
+        elif configs["slp_units"].lower() != "hpa":
+            raise ValueError(
+                f"Units of pressure - {configs['slp_units']} not recognised"
+            )
         tracks["wind"] = tracks.wind * dataset_config["windcorrs"]
         tracks["lon"] = wrap_lons(tracks.lon, wrap_point, 360)
 

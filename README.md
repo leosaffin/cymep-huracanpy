@@ -82,6 +82,11 @@ how to find/load them
 # run
 path_to_data: "trajs/"
 
+# Units of SLP data on tracks
+# cymep works with hPa, so specify "Pa" to divide by 100 when loaded or "hPa" for no
+# change
+slp_units: "Pa"
+
 # Keywords passed to huracanpy.load() for all datasets
 # Can also be specified for each dataset if they require additional keywords
 load_keywords:
