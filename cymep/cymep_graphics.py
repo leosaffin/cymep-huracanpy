@@ -18,7 +18,7 @@ def generate_plots(config_filename):
         configs = yaml.safe_load(f)
 
     # Make path for output files
-    path = pathlib.Path("cymep-data/")
+    path = pathlib.Path("cymep-figs/")
     path.mkdir(exist_ok=True)
     (path / "line").mkdir(exist_ok=True)
     (path / "spatial").mkdir(exist_ok=True)
