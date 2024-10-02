@@ -79,6 +79,12 @@ def generate_plots(config_filename):
                 axes[n].coastlines()
                 axes[n].gridlines(draw_labels=["left", "bottom"])
 
+            fig.subplots_adjust(bottom=0.1)
+            cax = fig.add_axes([0.2, 0, 0.6, 0.05])
+            fig.colorbar(im, cax=cax, orientation="horizontal")
+            plt.savefig(f"cymep-figs/spatial/{var}_{filename}.png")
+            plt.close()
+
     for correlation in ["spearman", "pearson"]:
         for period in ["month", "year"]:
             repstr = f"{correlation}_{period}_"
