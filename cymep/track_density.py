@@ -3,7 +3,6 @@ import warnings
 import shapely
 from shapely.affinity import translate
 import numpy as np
-from iris.analysis.cartography import wrap_lons
 
 from huracanpy.utils.geography import basins_def
 
@@ -52,8 +51,7 @@ def create_grid(gridsize, basin, buffer, wrap_point=-180):
 
             elif lonW < wrap_point or lonE > wrap_point + 360:
                 # Put the wrap point somewhere between lonW and lonE
-                wrap_point = lonW - (lonE - 360)
-                lonW, lonE = wrap_lons(np.array(lonW, lonE), wrap_point, 360)
+                wrap_point = lonW
 
     dlat = gridsize
     dlon = gridsize
