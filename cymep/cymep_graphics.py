@@ -78,15 +78,14 @@ def generate_plots(config_filename):
                 axes[n].coastlines()
                 axes[n].gridlines(draw_labels=["left", "bottom"])
 
-            fig.subplots_adjust(bottom=0.1)
-            cax = fig.add_axes([0.2, 0, 0.6, 0.05])
-            fig.colorbar(im, cax=cax, orientation="horizontal")
-            plt.savefig(f"cymep-figs/spatial/{var}_{filename}.png")
+    for correlation in ["spearman", "pearson"]:
+        for period in ["month", "year"]:
+            repstr = f"{correlation}_{period}_"
+            ds_ = ds[[var for var in ds if repstr in var]]
+            ds_ = ds_.rename({var: var.replace(repstr, "") for var in ds_})
+            correlation_table(ds_, cmap="Blues_r")
+            plt.savefig(f"cymep-figs/tables/{period}ly_{correlation}_correlation_{filename}.png")
             plt.close()
-
-    correlation_table(ds[[var for var in ds if "rs_" in var]], cmap="Blues_r")
-    plt.savefig(f"cymep-figs/tables/seasonal_cycle_correlation_{filename}.png")
-    plt.close()
 
     correlation_table(ds[[var for var in ds if "rxy_" in var]], cmap="Blues_r")
     plt.savefig(f"cymep-figs/tables/spatial_correlation_{filename}.png")

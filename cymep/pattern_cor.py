@@ -25,14 +25,20 @@ def temporal_correlations(ds):
 
     # Temporal correlation calculations
     for name in ds:
-        if "pm_" in name:
-            # Swap per month strings with corr prefix and init dict key
-            # Spearman Rank
-            repStr = name.replace("pm_", "rs_")
-            corr_ds[repStr] = ("dataset", np.empty(nfiles))
+        if "pm_" in name or "py_" in name:
+            if "pm_" in name:
+                # Swap per month strings with corr prefix and init dict key
+                # Spearman Rank
+                repStr = name.replace("pm_", "spearman_month_")
+                # Pearson correlation
+                repStr_p = name.replace("pm_", "pearson_month_")
 
-            # Pearson correlation
-            repStr_p = name.replace("pm_", "rp_")
+            if "py_" in name:
+                repStr = name.replace("py_", "spearman_year_")
+                # Pearson correlation
+                repStr_p = name.replace("py_", "pearson_year_")
+
+            corr_ds[repStr] = ("dataset", np.empty(nfiles))
             corr_ds[repStr_p] = ("dataset", np.empty(nfiles))
             for ii in range(nfiles):
                 # Create tmp vars and find nans
