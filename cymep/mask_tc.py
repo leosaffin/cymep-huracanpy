@@ -43,7 +43,7 @@ def filter_tracks(tracks, special_filter_obs, basin, months, years, truncate_yea
     # Mask TCs for particular basin based on genesis location
     if basin is not None:
         if basin in ["N", "H"]:
-            tracks["basin"] = huracanpy.utils.geography.get_hemisphere(tracks.lon, tracks.lat)
+            tracks["basin"] = huracanpy.utils.geography.get_hemisphere(tracks.lat)
         else:
             tracks["basin"] = huracanpy.utils.geography.get_basin(tracks.lon, tracks.lat)
 
