@@ -18,12 +18,13 @@ def generate_plots(config_filename):
         configs = yaml.safe_load(f)
 
     # Make path for output files
-    path = pathlib.Path("cymep-figs/")
-    path.mkdir(exist_ok=True)
-    (path / "line").mkdir(exist_ok=True)
-    (path / "spatial").mkdir(exist_ok=True)
-    (path / "tables").mkdir(exist_ok=True)
-    (path / "taylor").mkdir(exist_ok=True)
+    path = pathlib.Path("cymep-data")
+    plot_path = pathlib.Path("cymep-figs")
+    plot_path.mkdir(exist_ok=True)
+    (plot_path / "line").mkdir(exist_ok=True)
+    (plot_path / "spatial").mkdir(exist_ok=True)
+    (plot_path / "tables").mkdir(exist_ok=True)
+    (plot_path / "taylor").mkdir(exist_ok=True)
 
     # Load in processed data
     filename = f"{configs['filename_out']}_{configs['basin']}"
@@ -47,7 +48,7 @@ def generate_plots(config_filename):
             plt.xlabel(x.capitalize())
             plt.ylabel(var)
             plt.legend()
-            plt.savefig(f"cymep-figs/line/{var}_{filename}.png")
+            plt.savefig(plot_path / f"line/{var}_{filename}.png")
             plt.close()
 
         elif "full" in var:
@@ -84,17 +85,17 @@ def generate_plots(config_filename):
             ds_ = ds[[var for var in ds if repstr in var]]
             ds_ = ds_.rename({var: var.replace(repstr, "") for var in ds_})
             correlation_table(ds_, cmap="Blues_r")
-            plt.savefig(f"cymep-figs/tables/{period}ly_{correlation}_correlation_{filename}.png")
+            plt.savefig(plot_path / f"tables/{period}ly_{correlation}_correlation_{filename}.png")
             plt.close()
 
     correlation_table(ds[[var for var in ds if "rxy_" in var]], cmap="Blues_r")
-    plt.savefig(f"cymep-figs/tables/spatial_correlation_{filename}.png")
+    plt.savefig(plot_path / f"tables/spatial_correlation_{filename}.png")
 
     correlation_table(ds[[var for var in ds if "uclim_" in var]], reference="OBS", cmap="coolwarm")
-    plt.savefig(f"cymep-figs/tables/climatological_bias_{filename}.png")
+    plt.savefig(plot_path / f"tables/climatological_bias_{filename}.png")
 
     correlation_table(ds[[var for var in ds if "utc_" in var]], reference="OBS", cmap="coolwarm")
-    plt.savefig(f"cymep-figs/tables/storm_mean_bias_{filename}.png")
+    plt.savefig(plot_path / f"tables/storm_mean_bias_{filename}.png")
     plt.close()
 
     # TODO - Taylor diagram
