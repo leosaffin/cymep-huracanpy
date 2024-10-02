@@ -41,8 +41,8 @@ def filter_tracks(tracks, special_filter_obs, basin, months, years, truncate_yea
         tracks = tracks.where(tracks.wind > windthreshold, drop=True)
 
     # Mask TCs for particular basin based on genesis location
-    if basin is not None:
-        if basin in ["N", "H"]:
+    if basin.lower() != "global":
+        if basin.lower() in ["n", "s"]:
             tracks["basin"] = huracanpy.utils.geography.get_hemisphere(tracks.lat)
         else:
             tracks["basin"] = huracanpy.utils.geography.get_basin(tracks.lon, tracks.lat)

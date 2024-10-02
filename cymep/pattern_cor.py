@@ -46,8 +46,12 @@ def temporal_correlations(ds):
                 tmpy = ds[name][ii, :].values
                 tmpx, tmpy = filter_nans([tmpx, tmpy], [tmpx, tmpy])
 
-                corr_ds[repStr][ii], tmp = spearmanr(tmpx, tmpy)
-                corr_ds[repStr_p][ii], tmp = pearsonr(tmpx, tmpy)
+                if len(tmpx) < 2 or len(tmpy) < 0:
+                    corr_ds[repStr][ii] = np.nan
+                    corr_ds[repStr_p][ii] = np.nan
+                else:
+                    corr_ds[repStr][ii], tmp = spearmanr(tmpx, tmpy)
+                    corr_ds[repStr_p][ii], tmp = pearsonr(tmpx, tmpy)
 
     return corr_ds
 

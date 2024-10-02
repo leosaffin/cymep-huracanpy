@@ -27,9 +27,11 @@ The first part of the yaml file has options for how cymep performs the analysis
 filename_out: "rean_configs"
 
 # Specify particular ocean basin or hemisphere
-# Basins - NATL, ENP, CP, WNP, NI, MED, SI, AUS, SP, SA, SH
+# Basins - NATL, ENP, CP, WNP, NI, MED, SI, AUS, SP, SA
 # Use "N" or "S" to specify hemisphere
-# Leave empty for global
+# Set to "global" for full global
+# Set to "all" to do all basins individually (including both hemispheres and global)
+# Use a list to specify specific basins
 basin: "NATL"
 
 # Length of side of each square gridbox used for spatial analysis in degrees
@@ -134,7 +136,7 @@ datasets:
 $> cymep config.yaml
 ```
 
-This will produce a handful of netCDF files in `cymep-data/`.
+This will produce a handful of netCDF files in `cymep-data/{basin}`.
 - `"diags_{filename_out}_{basin}.nc"` The main set of output diagnostics
 - `"means_{filename_out}_{basin}.nc"` Climatologies computed from the reference dataset
 - `"storms_{filename_out}_{basin}_{dataset}.nc"` One file per dataset with metrics for each individual storm in the dataset
@@ -145,7 +147,7 @@ This will produce a handful of netCDF files in `cymep-data/`.
 $> cymep-graphics config.yaml
 ```
 
-This will produce a suite of figures in various subfolders within `cymep-figs/`.
+This will produce a suite of figures in various subfolders within `cymep-figs/{basin}`.
 - `line/`
 - `spatial/`
 - `tables/`

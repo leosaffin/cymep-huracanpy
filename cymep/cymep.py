@@ -9,6 +9,7 @@ import xarray as xr
 from iris.analysis.cartography import wrap_lons
 
 import huracanpy
+from huracanpy.utils.geography import basins_def
 
 from cymep.mask_tc import fill_missing_pressure_wind, filter_tracks
 from cymep.track_density import track_density, track_mean, track_minmax, create_grid
@@ -79,11 +80,7 @@ def initialise_arrays(datasets, years, months, denslon, denslat):
     return ds_out
 
 
-def generate_diagnostics(config_filename):
-    # Read in configuration file
-    with open(config_filename) as f:
-        configs = yaml.safe_load(f)
-
+def generate_diagnostics(configs):
     # Get some useful global values based on input data
     datasets = list(configs["datasets"].keys())
     years = list(range(configs["styr"], configs["enyr"] + 1))
@@ -104,8 +101,8 @@ def generate_diagnostics(config_filename):
 
     # Make path for output files
     filename_out = f"{configs['filename_out']}_{configs['basin']}"
-    output_dir = pathlib.Path("cymep-data/")
-    output_dir.mkdir(exist_ok=True)
+    output_dir = pathlib.Path("cymep-data") / configs["basin"]
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     # Load and analyse each dataset
     input_dir = pathlib.Path(configs["path_to_data"])
@@ -389,7 +386,22 @@ def main():
 
     args = parser.parse_args()
 
-    generate_diagnostics(args.config_filename)
+    # Read in configuration file
+    with open(args.config_filename) as f:
+        configs = yaml.safe_load(f)
+
+    if isinstance(configs["basin"], list):
+        for basin in configs["basin"].copy():
+            print(f"Running cymep for basin {basin}")
+            configs["basin"] = basin
+            generate_diagnostics(configs)
+    elif configs["basin"].lower() == "all":
+        for basin in list(basins_def["WMO"].index) + ["N", "S", "global"]:
+            print(f"Running cymep for basin {basin}")
+            configs["basin"] = basin
+            generate_diagnostics(configs)
+    else:
+        generate_diagnostics(configs)
 
 
 if __name__ == "__main__":

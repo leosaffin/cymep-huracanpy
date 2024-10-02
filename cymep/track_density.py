@@ -8,11 +8,11 @@ from huracanpy.utils.geography import basins_def
 
 
 def create_grid(gridsize, basin, buffer, wrap_point=-180):
-    if basin is None:
+    if basin.lower() == "global":
         lonW, latS, lonE, latN = -180, -90, 180, 90
-    elif basin == "N":
+    elif basin.lower() == "n":
         lonW, latS, lonE, latN = -180, 0, 180, 90
-    elif basin == "S":
+    elif basin.lower() == "s":
         lonW, latS, lonE, latN = -180, -90, 180, 0
     else:
         try:

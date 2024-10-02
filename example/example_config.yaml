@@ -3,9 +3,11 @@
 filename_out: "rean_configs"
 
 # Specify particular ocean basin or hemisphere
-# Basins - NATL, ENP, CP, WNP, NI, MED, SI, AUS, SP, SA, SH
+# Basins - NATL, ENP, CP, WNP, NI, MED, SI, AUS, SP, SA
 # Use "N" or "S" to specify hemisphere
-# Leave empty for global
+# Set to "global" for full global
+# Set to "all" to do all basins individually (including both hemispheres and global)
+# Use a list to specify specific basins
 basin: "NATL"
 
 # Length of side of each square gridbox used for spatial analysis in degrees

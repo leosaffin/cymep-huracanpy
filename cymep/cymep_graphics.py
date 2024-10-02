@@ -8,19 +8,17 @@ import matplotlib
 import matplotlib.pyplot as plt
 from cartopy.crs import EqualEarth, PlateCarree
 
+from huracanpy.utils.geography import basins_def
+
 
 transform = PlateCarree()
 
 
-def generate_plots(config_filename):
-    # Read in configuration file
-    with open(config_filename) as f:
-        configs = yaml.safe_load(f)
-
+def generate_plots(configs):
     # Make path for output files
-    path = pathlib.Path("cymep-data")
-    plot_path = pathlib.Path("cymep-figs")
-    plot_path.mkdir(exist_ok=True)
+    path = pathlib.Path("cymep-data") / configs["basin"]
+    plot_path = pathlib.Path("cymep-figs") / configs["basin"]
+    plot_path.mkdir(parents=True, exist_ok=True)
     (plot_path / "line").mkdir(exist_ok=True)
     (plot_path / "spatial").mkdir(exist_ok=True)
     (plot_path / "tables").mkdir(exist_ok=True)
@@ -82,7 +80,7 @@ def generate_plots(config_filename):
             fig.subplots_adjust(bottom=0.1)
             cax = fig.add_axes([0.2, 0, 0.6, 0.05])
             fig.colorbar(im, cax=cax, orientation="horizontal")
-            plt.savefig(f"cymep-figs/spatial/{var}_{filename}.png")
+            plt.savefig(plot_path / f"spatial/{var}_{filename}.png")
             plt.close()
 
     for correlation in ["spearman", "pearson"]:
@@ -96,9 +94,11 @@ def generate_plots(config_filename):
 
     correlation_table(ds[[var for var in ds if "rxy_" in var]], cmap="Blues_r")
     plt.savefig(plot_path / f"tables/spatial_correlation_{filename}.png")
+    plt.close()
 
     correlation_table(ds[[var for var in ds if "uclim_" in var]], reference="OBS", cmap="coolwarm")
     plt.savefig(plot_path / f"tables/climatological_bias_{filename}.png")
+    plt.close()
 
     correlation_table(ds[[var for var in ds if "utc_" in var]], reference="OBS", cmap="coolwarm")
     plt.savefig(plot_path / f"tables/storm_mean_bias_{filename}.png")
@@ -168,7 +168,22 @@ def main():
 
     args = parser.parse_args()
 
-    generate_plots(args.config_filename)
+    # Read in configuration file
+    with open(args.config_filename) as f:
+        configs = yaml.safe_load(f)
+
+    if isinstance(configs["basin"], list):
+        for basin in configs["basin"].copy():
+            print(f"Running cymep-graphics for basin {basin}")
+            configs["basin"] = basin
+            generate_plots(configs)
+    elif configs["basin"].lower() == "all":
+        for basin in list(basins_def["WMO"].index) + ["N", "S", "global"]:
+            print(f"Running cymep-graphics for basin {basin}")
+            configs["basin"] = basin
+            generate_plots(configs)
+    else:
+        generate_plots(configs)
 
 
 if __name__ == '__main__':
