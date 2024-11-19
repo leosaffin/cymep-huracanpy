@@ -9,7 +9,7 @@ import xarray as xr
 from iris.analysis.cartography import wrap_lons
 
 import huracanpy
-from huracanpy.utils.geography import basins_def
+from huracanpy import basins
 
 from cymep.mask_tc import fill_missing_pressure_wind, filter_tracks
 from cymep.track_density import track_density, track_mean, track_minmax, create_grid
@@ -146,20 +146,20 @@ def generate_diagnostics(configs):
         )
 
         # Add ACE and PACE to tracks
-        tracks["ace"] = huracanpy.utils.ace.ace_by_point(
+        tracks["ace"] = huracanpy.tc.ace(
             tracks.wind, threshold=configs["THRESHOLD_ACE_WIND"],
         )
 
         # Calculate the coefficients of the fit for the reference data and then apply
         # these coefficients to the other datasets
         if ii == 0:
-            tracks["pace"], pw_model = huracanpy.utils.ace.pace_by_point(
+            tracks["pace"], pw_model = huracanpy.tc.pace(
                 tracks.slp,
                 wind=tracks.wind,
                 threshold_pressure=configs["THRESHOLD_PACE_PRES"],
             )
         else:
-            tracks["pace"], _ = huracanpy.utils.ace.pace_by_point(
+            tracks["pace"], _ = huracanpy.tc.pace(
                 tracks.slp,
                 model=pw_model,
                 threshold_pressure=configs["THRESHOLD_PACE_PRES"],
@@ -396,7 +396,7 @@ def main():
             configs["basin"] = basin
             generate_diagnostics(configs)
     elif configs["basin"].lower() == "all":
-        for basin in list(basins_def["WMO"].index) + ["N", "S", "global"]:
+        for basin in list(basins["WMO-TC"].index) + ["N", "S", "global"]:
             print(f"Running cymep for basin {basin}")
             configs["basin"] = basin
             generate_diagnostics(configs)

@@ -63,7 +63,7 @@ slp_units: "Pa"
 # Keywords passed to huracanpy.load() for all datasets
 # Can also be specified for each dataset if they require additional keywords
 load_keywords:
-  tracker: tempestextremes
+  source: tempestextremes
   tempest_extremes_unstructured: False
   variable_names:
     - slp

@@ -4,7 +4,7 @@ import shapely
 from shapely.affinity import translate
 import numpy as np
 
-from huracanpy.utils.geography import basins_def
+from huracanpy import basins
 
 
 def create_grid(gridsize, basin, buffer, wrap_point=-180):
@@ -16,13 +16,13 @@ def create_grid(gridsize, basin, buffer, wrap_point=-180):
         lonW, latS, lonE, latN = -180, -90, 180, 0
     else:
         try:
-            lonW, latS, lonE, latN = basins_def["WMO"].loc[basin].geometry.exterior.bounds
+            lonW, latS, lonE, latN = basins["WMO-TC"].loc[basin].geometry.exterior.bounds
         except AttributeError:
             # If the basin crosses the dateline it will be specified as a multipolygon
             # In this case we don't want the exterior of this multipolygon we want to
             # shift our longitudes so that they cross the dateline
             wrap_point = 0
-            geoms = basins_def["WMO"].loc[basin].geometry.geoms
+            geoms = basins["WMO-TC"].loc[basin].geometry.geoms
             geoms_translated = []
             for geom in geoms:
                 if (np.array(geom.exterior.xy[0]) < wrap_point).all():

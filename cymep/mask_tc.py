@@ -43,13 +43,13 @@ def filter_tracks(tracks, special_filter_obs, basin, months, years, truncate_yea
     # Mask TCs for particular basin based on genesis location
     if basin.lower() != "global":
         if basin.lower() in ["n", "s"]:
-            tracks["basin"] = huracanpy.utils.geography.get_hemisphere(tracks.lat)
+            tracks["basin"] = huracanpy.info.hemisphere(tracks.lat)
         else:
-            tracks["basin"] = huracanpy.utils.geography.get_basin(tracks.lon, tracks.lat)
+            tracks["basin"] = huracanpy.info.basin(tracks.lon, tracks.lat)
 
         # Determine if track is in basin by whether it has an Ocean point in the basin
-        tracks["land"] = huracanpy.utils.geography.get_land_or_ocean(tracks.lon, tracks.lat)
-        tracks_ = tracks.where((tracks.basin == basin) & (tracks.land == "Ocean"), drop=True)
+        ocean = huracanpy.info.is_ocean(tracks.lon, tracks.lat)
+        tracks_ = tracks.where((tracks.basin == basin) & ocean, drop=True)
 
         track_ids_to_keep = list(set(tracks_.track_id.values))
         tracks = tracks.where(tracks.track_id.isin(track_ids_to_keep), drop=True)

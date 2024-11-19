@@ -8,7 +8,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 from cartopy.crs import EqualEarth, PlateCarree
 
-from huracanpy.utils.geography import basins_def
+from huracanpy import basins
 
 
 transform = PlateCarree()
@@ -178,7 +178,7 @@ def main():
             configs["basin"] = basin
             generate_plots(configs)
     elif configs["basin"].lower() == "all":
-        for basin in list(basins_def["WMO"].index) + ["N", "S", "global"]:
+        for basin in list(basins["WMO-TC"].index) + ["N", "S", "global"]:
             print(f"Running cymep-graphics for basin {basin}")
             configs["basin"] = basin
             generate_plots(configs)
