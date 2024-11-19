@@ -16,7 +16,9 @@ def create_grid(gridsize, basin, buffer, wrap_point=-180):
         lonW, latS, lonE, latN = -180, -90, 180, 0
     else:
         try:
-            lonW, latS, lonE, latN = basins["WMO-TC"].loc[basin].geometry.exterior.bounds
+            lonW, latS, lonE, latN = (
+                basins["WMO-TC"].loc[basin].geometry.exterior.bounds
+            )
         except AttributeError:
             # If the basin crosses the dateline it will be specified as a multipolygon
             # In this case we don't want the exterior of this multipolygon we want to
@@ -83,7 +85,9 @@ def track_density(clat, clon, glat, glon, setzeros):
 
 def track_mean(clat, clon, glat, glon, cvar, meanornot, minhits):
     npoints = len(clat)
-    out_of_bounds = (clon < glon[0]) | (clon >= glon[-1]) | (clat < glat[0]) | (clat >= glat[-1])
+    out_of_bounds = (
+        (clon < glon[0]) | (clon >= glon[-1]) | (clat < glat[0]) | (clat >= glat[-1])
+    )
 
     clon = clon[~out_of_bounds]
     clat = clat[~out_of_bounds]
@@ -118,7 +122,9 @@ def track_mean(clat, clon, glat, glon, cvar, meanornot, minhits):
 
 def track_minmax(clat, clon, glat, glon, cvar, statistic):
     npoints = len(clat)
-    out_of_bounds = (clon < glon[0]) | (clon >= glon[-1]) | (clat < glat[0]) | (clat >= glat[-1])
+    out_of_bounds = (
+        (clon < glon[0]) | (clon >= glon[-1]) | (clat < glat[0]) | (clat >= glat[-1])
+    )
 
     clon = clon[~out_of_bounds]
     clat = clat[~out_of_bounds]

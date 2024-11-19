@@ -53,7 +53,11 @@ def generate_plots(configs):
             fig, axes = plt.subplots(
                 len(ds.dataset.values) // 2,
                 2,
-                sharex="all", sharey="all", figsize=(8, 15), subplot_kw=dict(projection=projection))
+                sharex="all",
+                sharey="all",
+                figsize=(8, 15),
+                subplot_kw=dict(projection=projection),
+            )
             axes = axes.flatten()
 
             if "bias" in var:
@@ -72,7 +76,15 @@ def generate_plots(configs):
 
             for n, dataset in enumerate(ds.dataset.values):
                 ds_ = ds[var].sel(dataset=dataset)
-                im = axes[n].pcolormesh(ds.lon, ds.lat, ds_, vmin=vmin, vmax=vmax, cmap=cmap, transform=transform)
+                im = axes[n].pcolormesh(
+                    ds.lon,
+                    ds.lat,
+                    ds_,
+                    vmin=vmin,
+                    vmax=vmax,
+                    cmap=cmap,
+                    transform=transform,
+                )
                 axes[n].set_title(dataset)
                 axes[n].coastlines()
                 axes[n].gridlines(draw_labels=["left", "bottom"])
@@ -89,18 +101,25 @@ def generate_plots(configs):
             ds_ = ds[[var for var in ds if repstr in var]]
             ds_ = ds_.rename({var: var.replace(repstr, "") for var in ds_})
             correlation_table(ds_, cmap="Blues_r")
-            plt.savefig(plot_path / f"tables/{period}ly_{correlation}_correlation_{filename}.png")
+            plt.savefig(
+                plot_path
+                / f"tables/{period}ly_{correlation}_correlation_{filename}.png"
+            )
             plt.close()
 
     correlation_table(ds[[var for var in ds if "rxy_" in var]], cmap="Blues_r")
     plt.savefig(plot_path / f"tables/spatial_correlation_{filename}.png")
     plt.close()
 
-    correlation_table(ds[[var for var in ds if "uclim_" in var]], reference="OBS", cmap="coolwarm")
+    correlation_table(
+        ds[[var for var in ds if "uclim_" in var]], reference="OBS", cmap="coolwarm"
+    )
     plt.savefig(plot_path / f"tables/climatological_bias_{filename}.png")
     plt.close()
 
-    correlation_table(ds[[var for var in ds if "utc_" in var]], reference="OBS", cmap="coolwarm")
+    correlation_table(
+        ds[[var for var in ds if "utc_" in var]], reference="OBS", cmap="coolwarm"
+    )
     plt.savefig(plot_path / f"tables/storm_mean_bias_{filename}.png")
     plt.close()
 
@@ -186,5 +205,5 @@ def main():
         generate_plots(configs)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

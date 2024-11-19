@@ -13,13 +13,20 @@ from huracanpy import basins
 
 from cymep.mask_tc import fill_missing_pressure_wind, filter_tracks
 from cymep.track_density import track_density, track_mean, track_minmax, create_grid
-from cymep.pattern_cor import spatial_correlations, temporal_correlations, taylor_stats_ds
+from cymep.pattern_cor import (
+    spatial_correlations,
+    temporal_correlations,
+    taylor_stats_ds,
+)
 
 
 def initialise_arrays(datasets, years, months, denslon, denslat):
     data_vars = dict()
     for var in ["py_count", "py_tcd", "py_ace", "py_pace", "py_latgen", "py_lmi"]:
-        data_vars[var] = (("dataset", "year"), np.full([len(datasets), len(years)], np.nan))
+        data_vars[var] = (
+            ("dataset", "year"),
+            np.full([len(datasets), len(years)], np.nan),
+        )
 
     for var in ["pm_count", "pm_tcd", "pm_ace", "pm_pace", "pm_lmi"]:
         data_vars[var] = (
@@ -147,7 +154,8 @@ def generate_diagnostics(configs):
 
         # Add ACE and PACE to tracks
         tracks["ace"] = huracanpy.tc.ace(
-            tracks.wind, threshold=configs["THRESHOLD_ACE_WIND"],
+            tracks.wind,
+            threshold=configs["THRESHOLD_ACE_WIND"],
         )
 
         # Calculate the coefficients of the fit for the reference data and then apply
@@ -173,9 +181,16 @@ def generate_diagnostics(configs):
         for jj, month in enumerate(months):
             is_month = storm_data.genesis_time.dt.month == month
             ds_out.pm_count[ii, jj] = np.count_nonzero(is_month) / nmodyears
-            ds_out.pm_tcd[ii, jj] = storm_data.total_cyclone_days[is_month].sum() / nmodyears
-            ds_out.pm_ace[ii, jj] = storm_data.accumulated_cyclone_energy[is_month].sum() / nmodyears
-            ds_out.pm_pace[ii, jj] = storm_data.pressure_accumulated_cyclone_energy[is_month].sum() / nmodyears
+            ds_out.pm_tcd[ii, jj] = (
+                storm_data.total_cyclone_days[is_month].sum() / nmodyears
+            )
+            ds_out.pm_ace[ii, jj] = (
+                storm_data.accumulated_cyclone_energy[is_month].sum() / nmodyears
+            )
+            ds_out.pm_pace[ii, jj] = (
+                storm_data.pressure_accumulated_cyclone_energy[is_month].sum()
+                / nmodyears
+            )
             ds_out.pm_lmi[ii, jj] = storm_data.maximum_intensity_lat[is_month].mean()
 
         # Bin storms per dataset per calendar year
@@ -183,21 +198,38 @@ def generate_diagnostics(configs):
         year_end = storm_data.genesis_time.dt.year.max()
         for year in years:
             # Convert from year to zero indexing for numpy array
-            yrix = (year - configs["styr"])
+            yrix = year - configs["styr"]
             if year_start <= year <= year_end:
                 is_year = storm_data.genesis_time.dt.year == year
-                ds_out.py_count[ii, yrix] = np.count_nonzero(is_year) / dataset_config["ensmembers"]
-                ds_out.py_tcd[ii, yrix] = storm_data.total_cyclone_days[is_year].sum() / dataset_config["ensmembers"]
-                ds_out.py_ace[ii, yrix] = storm_data.accumulated_cyclone_energy[is_year].sum() / dataset_config["ensmembers"]
-                ds_out.py_pace[ii, yrix] = storm_data.pressure_accumulated_cyclone_energy[is_year].sum() / dataset_config["ensmembers"]
-                ds_out.py_lmi[ii, yrix] = storm_data.maximum_intensity_lat[is_year].mean()
-                ds_out.py_latgen[ii, yrix] = np.abs(storm_data.genesis_lat[is_year]).mean()
+                ds_out.py_count[ii, yrix] = (
+                    np.count_nonzero(is_year) / dataset_config["ensmembers"]
+                )
+                ds_out.py_tcd[ii, yrix] = (
+                    storm_data.total_cyclone_days[is_year].sum()
+                    / dataset_config["ensmembers"]
+                )
+                ds_out.py_ace[ii, yrix] = (
+                    storm_data.accumulated_cyclone_energy[is_year].sum()
+                    / dataset_config["ensmembers"]
+                )
+                ds_out.py_pace[ii, yrix] = (
+                    storm_data.pressure_accumulated_cyclone_energy[is_year].sum()
+                    / dataset_config["ensmembers"]
+                )
+                ds_out.py_lmi[ii, yrix] = storm_data.maximum_intensity_lat[
+                    is_year
+                ].mean()
+                ds_out.py_latgen[ii, yrix] = np.abs(
+                    storm_data.genesis_lat[is_year]
+                ).mean()
 
         # Calculate annual averages
         ds_out.uclim_count[ii] = ds_out.pm_count[ii, :].sum()
         ds_out.uclim_tcd[ii] = storm_data.total_cyclone_days.sum() / nmodyears
         ds_out.uclim_ace[ii] = storm_data.accumulated_cyclone_energy.sum() / nmodyears
-        ds_out.uclim_pace[ii] = storm_data.pressure_accumulated_cyclone_energy.sum() / nmodyears
+        ds_out.uclim_pace[ii] = (
+            storm_data.pressure_accumulated_cyclone_energy.sum() / nmodyears
+        )
         ds_out.uclim_lmi[ii] = ds_out.py_lmi[ii, :].mean()
 
         # Calculate storm averages
@@ -213,13 +245,16 @@ def generate_diagnostics(configs):
             / nmodyears
         )
 
-        gendens = track_density(
-            storm_data.genesis_lat.data,
-            storm_data.genesis_lon.data,
-            denslat,
-            denslon,
-            False
-        ) / nmodyears
+        gendens = (
+            track_density(
+                storm_data.genesis_lat.data,
+                storm_data.genesis_lon.data,
+                denslat,
+                denslon,
+                False,
+            )
+            / nmodyears
+        )
 
         tcddens = trackdens * 0.25
 
@@ -323,7 +358,7 @@ def generate_diagnostics(configs):
     # Write NetCDF file
     # Package a series of global package inputs for storage as NetCDF attributes
     ds_out.attrs = dict(
-        strbasin=configs['basin'],
+        strbasin=configs["basin"],
         do_special_filter_obs=str(configs["do_special_filter_obs"]),
         do_fill_missing_pw=str(configs["do_fill_missing_pw"]),
         truncate_years=str(configs["truncate_years"]),
@@ -374,7 +409,7 @@ def get_storm_data(tracks, define_mi_by_pressure):
     # )
     storm_data["total_cyclone_days"] = (
         "track_id",
-        np.array([0.25 * len(track.time) for track_id, track in track_groups])
+        np.array([0.25 * len(track.time) for track_id, track in track_groups]),
     )
 
     return storm_data

@@ -100,8 +100,8 @@ def taylor_stats(x, y, weights):
     # Calculate averages, variance, and RMSE
     xmean = np.average(x, weights=weights)
     ymean = np.average(y, weights=weights)
-    xvar = np.average((x - xmean)**2, weights=weights)
-    yvar = np.average((y - ymean)**2, weights=weights)
+    xvar = np.average((x - xmean) ** 2, weights=weights)
+    yvar = np.average((y - ymean) ** 2, weights=weights)
     rmse = np.sqrt(np.average((x - y) ** 2, weights=weights))
 
     # Calculate bias
@@ -115,13 +115,12 @@ def taylor_stats(x, y, weights):
 
 
 def wpearsonr(x, y, weights):
-    """Weighted pearson correlation coefficient
-    """
+    """Weighted pearson correlation coefficient"""
     xanom = x - np.average(x, weights=weights)
     yanom = y - np.average(y, weights=weights)
     xycov = np.sum(weights * xanom * yanom)
-    xanom2 = np.sum(weights * xanom ** 2)
-    yanom2 = np.sum(weights * yanom ** 2)
+    xanom2 = np.sum(weights * xanom**2)
+    yanom2 = np.sum(weights * yanom**2)
 
     # Calculate coefficient
     return xycov / (np.sqrt(xanom2) * np.sqrt(yanom2))
