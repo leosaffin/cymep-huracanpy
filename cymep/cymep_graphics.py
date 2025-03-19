@@ -30,6 +30,10 @@ def generate_plots(configs):
 
     projection = EqualEarth(central_longitude=ds.lon.values.mean())
 
+    # Determine layout for groups of maps
+    nsubplots = len(ds.dataset.values)
+    nrows, ncols = optimum_layout(nsubplots)
+
     for var in ds:
         if "py_" in var or "pm_" in var:
             if "py_" in var:
@@ -51,14 +55,16 @@ def generate_plots(configs):
 
         elif "full" in var:
             fig, axes = plt.subplots(
-                len(ds.dataset.values) // 2,
-                2,
+                nrows,
+                ncols,
                 sharex="all",
                 sharey="all",
-                figsize=(8, 15),
+                figsize=(ncols * 3, nrows * 2 + 1),
                 subplot_kw=dict(projection=projection),
             )
             axes = axes.flatten()
+            if len(ds.dataset.values) != nrows * ncols:
+                axes[-1].remove()
 
             if "bias" in var:
                 vmax = np.abs(ds[var]).max()
@@ -87,11 +93,23 @@ def generate_plots(configs):
                 )
                 axes[n].set_title(dataset)
                 axes[n].coastlines()
-                axes[n].gridlines(draw_labels=["left", "bottom"])
 
-            fig.subplots_adjust(bottom=0.1)
-            cax = fig.add_axes([0.2, 0, 0.6, 0.05])
-            fig.colorbar(im, cax=cax, orientation="horizontal")
+                if n >= (nrows - 1) * ncols:
+                    if n % ncols == 0:
+                        axes[n].gridlines(draw_labels=["left", "bottom"])
+                    else:
+                        axes[n].gridlines(draw_labels=["bottom"])
+                elif n % ncols == 0:
+                    axes[n].gridlines(draw_labels=["left"])
+                else:
+                    axes[n].gridlines(draw_labels=False)
+
+            fig.subplots_adjust(bottom=0.15)
+            cax = fig.add_axes([0.1, 0.05, 0.8, 0.05])
+            cbar = fig.colorbar(im, cax=cax, orientation="horizontal")
+            if "units" in ds_.attrs:
+                cbar.set_label(ds_.attrs["units"])
+            fig.suptitle(var)
             plt.savefig(plot_path / f"spatial/{var}_{filename}.png")
             plt.close()
 
@@ -100,26 +118,30 @@ def generate_plots(configs):
             repstr = f"{correlation}_{period}_"
             ds_ = ds[[var for var in ds if repstr in var]]
             ds_ = ds_.rename({var: var.replace(repstr, "") for var in ds_})
-            correlation_table(ds_, cmap="Blues_r")
+            fig, table = correlation_table(ds_, cmap="Blues_r")
+            fig.suptitle(f"{correlation.capitalize()} correlation by {period}")
             plt.savefig(
                 plot_path
                 / f"tables/{period}ly_{correlation}_correlation_{filename}.png"
             )
             plt.close()
 
-    correlation_table(ds[[var for var in ds if "rxy_" in var]], cmap="Blues_r")
+    fig, table = correlation_table(ds[[var for var in ds if "rxy_" in var]], cmap="Blues_r")
+    fig.suptitle("Spatial correlation")
     plt.savefig(plot_path / f"tables/spatial_correlation_{filename}.png")
     plt.close()
 
-    correlation_table(
+    fig, table = correlation_table(
         ds[[var for var in ds if "uclim_" in var]], reference="OBS", cmap="coolwarm"
     )
+    fig.suptitle("Climatological bias")
     plt.savefig(plot_path / f"tables/climatological_bias_{filename}.png")
     plt.close()
 
-    correlation_table(
+    fig, table = correlation_table(
         ds[[var for var in ds if "utc_" in var]], reference="OBS", cmap="coolwarm"
     )
+    fig.suptitle("Storm mean bias")
     plt.savefig(plot_path / f"tables/storm_mean_bias_{filename}.png")
     plt.close()
 
@@ -169,7 +191,7 @@ def correlation_table(ds, cmap="viridis", reference=None):
     plt.gca().set_axis_off()
 
     fig.subplots_adjust(bottom=0.15)
-    cax = fig.add_axes([0.2, 0.05, 0.6, 0.05])
+    cax = fig.add_axes([0.15, 0.05, 0.7, 0.05])
     cbar = fig.colorbar(scalarmap, cax=cax, orientation="horizontal")
     if reference is None:
         cbar.set_ticks([vmin, vmax])
@@ -178,7 +200,26 @@ def correlation_table(ds, cmap="viridis", reference=None):
         cbar.set_ticks([vmin, 0, vmax])
         cbar.set_ticklabels(["Low Bias", "No Bias", "High Bias"])
 
-    return table
+    return fig, table
+
+
+def optimum_layout(nsubplots):
+    # Given the number of suplots arrange into the closest to square pair of factors
+    # e.g. 15 would be 5x3 (prefer more rows than columns)
+    factors = _factors(nsubplots)
+
+    # If the number of subplots is prime add an extra blank suplot and find the new
+    # closest pair of factors
+    # e.g. 7 would be 4x2
+    if len(factors) == 1:
+        factors = _factors(nsubplots + 1)
+    ncols, nrows = factors[-1]
+
+    return nrows, ncols
+
+
+def _factors(y):
+    return [(x, y // x) for x in range(1, int(np.floor(np.sqrt(y))) + 1) if y % x == 0]
 
 
 def main():
