@@ -131,15 +131,16 @@ def generate_plots(configs):
     plt.savefig(plot_path / f"tables/spatial_correlation_{filename}.png")
     plt.close()
 
+    reference = ds.dataset.values[0]
     fig, table = correlation_table(
-        ds[[var for var in ds if "uclim_" in var]], reference="OBS", cmap="coolwarm"
+        ds[[var for var in ds if "uclim_" in var]], reference=reference, cmap="coolwarm"
     )
     fig.suptitle("Climatological bias")
     plt.savefig(plot_path / f"tables/climatological_bias_{filename}.png")
     plt.close()
 
     fig, table = correlation_table(
-        ds[[var for var in ds if "utc_" in var]], reference="OBS", cmap="coolwarm"
+        ds[[var for var in ds if "utc_" in var]], reference=reference, cmap="coolwarm"
     )
     fig.suptitle("Storm mean bias")
     plt.savefig(plot_path / f"tables/storm_mean_bias_{filename}.png")
