@@ -38,29 +38,27 @@ def filter_tracks(tracks, special_filter_obs, basin, months, years, truncate_yea
     if special_filter_obs:
         print("Doing special processing of control file")
         windthreshold = 17.5
-        tracks = tracks.where(tracks.wind > windthreshold, drop=True)
+        tracks = tracks.isel(record=np.where(tracks.wind > windthreshold)[0])
 
     # Mask TCs for particular basin based on genesis location
     if basin.lower() != "global":
         if basin.lower() in ["n", "s"]:
-            tracks["basin"] = huracanpy.info.hemisphere(tracks.lat)
+            track_basin = huracanpy.info.hemisphere(tracks.lat)
         else:
-            tracks["basin"] = huracanpy.info.basin(tracks.lon, tracks.lat)
+            track_basin = huracanpy.info.basin(tracks.lon, tracks.lat)
 
         # Determine if track is in basin by whether it has an Ocean point in the basin
         ocean = huracanpy.info.is_ocean(tracks.lon, tracks.lat)
-        tracks_ = tracks.where((tracks.basin == basin) & ocean, drop=True)
-
-        track_ids_to_keep = list(set(tracks_.track_id.values))
-        tracks = tracks.where(tracks.track_id.isin(track_ids_to_keep), drop=True)
+        track_ids_to_keep = np.unique(tracks.track_id[(track_basin == basin) & ocean])
+        tracks = tracks.hrcn.sel_id(track_ids_to_keep)
 
     # Mask TCs based on temporal characteristics
-    origin = tracks.groupby("track_id").first()
+    origin = tracks.hrcn.get_gen_vals()
     valid_times = origin.time.dt.month.isin(months)
     if truncate_years:
         valid_times = valid_times & origin.time.dt.year.isin(years)
 
-    track_ids_to_keep = origin.track_id.where(valid_times)
-    tracks = tracks.where(tracks.track_id.isin(track_ids_to_keep), drop=True)
+    track_ids_to_keep = origin.track_id[valid_times]
+    tracks = tracks.hrcn.sel_id(track_ids_to_keep)
 
     return tracks

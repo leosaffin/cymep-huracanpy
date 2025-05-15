@@ -374,7 +374,7 @@ def generate_diagnostics(configs):
 def get_storm_data(tracks, define_mi_by_pressure):
     track_groups = tracks.groupby("track_id")
 
-    origin = track_groups.first()
+    origin = tracks.hrcn.get_gen_vals()
     origin_vars = {key: f"genesis_{key}" for key in ["lon", "lat", "time"]}
     storm_data = origin[origin_vars.keys()].rename(**origin_vars)
 
@@ -407,10 +407,7 @@ def get_storm_data(tracks, define_mi_by_pressure):
     # storm_data["total_cyclone_days"] = track_groups.map(
     #     lambda x: ((x.time.max() - x.time.min()) / np.timedelta64(1, "D")
     # )
-    storm_data["total_cyclone_days"] = (
-        "track_id",
-        np.array([0.25 * len(track.time) for track_id, track in track_groups]),
-    )
+    storm_data["total_cyclone_days"] = track_groups.map(lambda x: 0.25 * len(x.time))
 
     return storm_data
 
