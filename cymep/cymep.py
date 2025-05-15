@@ -128,6 +128,7 @@ def generate_diagnostics(configs):
             str(input_dir / dataset_config["filename"]),
             **{**configs["load_keywords"], **dataset_config["load_keywords"]},
         )
+        tracks = tracks.isel(record=np.where((tracks.time.dt.hour % 6) == 0)[0])
 
         if configs["slp_units"].lower() == "pa":
             tracks["slp"] = tracks.slp / 100.0
@@ -152,179 +153,175 @@ def generate_diagnostics(configs):
             configs["truncate_years"],
         )
 
-        # Add ACE and PACE to tracks
-        tracks["ace"] = huracanpy.tc.ace(
-            tracks.wind,
-            threshold=configs["THRESHOLD_ACE_WIND"],
-        )
-
-        # Calculate the coefficients of the fit for the reference data and then apply
-        # these coefficients to the other datasets
-        if ii == 0:
-            tracks["pace"], pw_model = huracanpy.tc.pace(
-                tracks.slp,
-                wind=tracks.wind,
-                threshold_pressure=configs["THRESHOLD_PACE_PRES"],
-            )
-        else:
-            tracks["pace"], _ = huracanpy.tc.pace(
-                tracks.slp,
-                model=pw_model,
-                threshold_pressure=configs["THRESHOLD_PACE_PRES"],
+        # Leave all diagnostics as zero if there are no tracks after filtering
+        if len(tracks.time) != 0:
+            # Add ACE and PACE to tracks
+            tracks["ace"] = huracanpy.tc.ace(
+                tracks.wind,
+                threshold=configs["THRESHOLD_ACE_WIND"],
             )
 
-        # Extract summary variables for each individual storm and save as netCDF
-        storm_data = get_storm_data(tracks, configs["do_defineMIbypres"])
-        storm_data.to_netcdf(output_dir / f"storms_{filename_out}_{dataset}.nc")
+            # Calculate the coefficients of the fit for the reference data and then apply
+            # these coefficients to the other datasets
+            if ii == 0:
+                tracks["pace"], pw_model = huracanpy.tc.pace(
+                    tracks.slp,
+                    wind=tracks.wind,
+                    threshold_pressure=configs["THRESHOLD_PACE_PRES"],
+                )
+            else:
+                tracks["pace"], _ = huracanpy.tc.pace(
+                    tracks.slp,
+                    model=pw_model,
+                    threshold_pressure=configs["THRESHOLD_PACE_PRES"],
+                )
 
-        # Bin storms per dataset per calendar month
-        for jj, month in enumerate(months):
-            is_month = storm_data.genesis_time.dt.month == month
-            ds_out.pm_count[ii, jj] = np.count_nonzero(is_month) / nmodyears
-            ds_out.pm_tcd[ii, jj] = (
-                storm_data.total_cyclone_days[is_month].sum() / nmodyears
+            # Extract summary variables for each individual storm and save as netCDF
+            storm_data = get_storm_data(tracks, configs["do_defineMIbypres"])
+            storm_data.to_netcdf(output_dir / f"storms_{filename_out}_{dataset}.nc")
+
+            # Bin storms per dataset per calendar month
+            for jj, month in enumerate(months):
+                is_month = storm_data.genesis_time.dt.month == month
+                ds_out.pm_count[ii, jj] = np.count_nonzero(is_month) / nmodyears
+                ds_out.pm_tcd[ii, jj] = (
+                    storm_data.total_cyclone_days[is_month].sum() / nmodyears
+                )
+                ds_out.pm_ace[ii, jj] = (
+                    storm_data.accumulated_cyclone_energy[is_month].sum() / nmodyears
+                )
+                ds_out.pm_pace[ii, jj] = (
+                    storm_data.pressure_accumulated_cyclone_energy[is_month].sum()
+                    / nmodyears
+                )
+                ds_out.pm_lmi[ii, jj] = storm_data.maximum_intensity_lat[
+                    is_month
+                ].mean()
+
+            # Bin storms per dataset per calendar year
+            year_start = storm_data.genesis_time.dt.year.min()
+            year_end = storm_data.genesis_time.dt.year.max()
+            for year in years:
+                # Convert from year to zero indexing for numpy array
+                yrix = year - configs["styr"]
+                if year_start <= year <= year_end:
+                    is_year = storm_data.genesis_time.dt.year == year
+                    ds_out.py_count[ii, yrix] = (
+                        np.count_nonzero(is_year) / dataset_config["ensmembers"]
+                    )
+                    ds_out.py_tcd[ii, yrix] = (
+                        storm_data.total_cyclone_days[is_year].sum()
+                        / dataset_config["ensmembers"]
+                    )
+                    ds_out.py_ace[ii, yrix] = (
+                        storm_data.accumulated_cyclone_energy[is_year].sum()
+                        / dataset_config["ensmembers"]
+                    )
+                    ds_out.py_pace[ii, yrix] = (
+                        storm_data.pressure_accumulated_cyclone_energy[is_year].sum()
+                        / dataset_config["ensmembers"]
+                    )
+                    ds_out.py_lmi[ii, yrix] = storm_data.maximum_intensity_lat[
+                        is_year
+                    ].mean()
+                    ds_out.py_latgen[ii, yrix] = np.abs(
+                        storm_data.genesis_lat[is_year]
+                    ).mean()
+
+            # Calculate annual averages
+            ds_out.uclim_count[ii] = ds_out.pm_count[ii, :].sum()
+            ds_out.uclim_tcd[ii] = storm_data.total_cyclone_days.sum() / nmodyears
+            ds_out.uclim_ace[ii] = (
+                storm_data.accumulated_cyclone_energy.sum() / nmodyears
             )
-            ds_out.pm_ace[ii, jj] = (
-                storm_data.accumulated_cyclone_energy[is_month].sum() / nmodyears
+            ds_out.uclim_pace[ii] = (
+                storm_data.pressure_accumulated_cyclone_energy.sum() / nmodyears
             )
-            ds_out.pm_pace[ii, jj] = (
-                storm_data.pressure_accumulated_cyclone_energy[is_month].sum()
+            ds_out.uclim_lmi[ii] = ds_out.py_lmi[ii, :].mean()
+
+            # Calculate storm averages
+            ds_out.utc_tcd[ii] = storm_data.total_cyclone_days.mean()
+            ds_out.utc_ace[ii] = storm_data.accumulated_cyclone_energy.mean()
+            ds_out.utc_pace[ii] = storm_data.pressure_accumulated_cyclone_energy.mean()
+            ds_out.utc_lmi[ii] = storm_data.maximum_intensity_lat.mean()
+            ds_out.utc_latgen[ii] = np.abs(storm_data.genesis_lat).mean()
+
+            # Calculate spatial densities, integrals, and min/maxes
+            trackdens = (
+                track_density(tracks.lat.data, tracks.lon.data, denslat, denslon, False)
                 / nmodyears
             )
-            ds_out.pm_lmi[ii, jj] = storm_data.maximum_intensity_lat[is_month].mean()
 
-        # Bin storms per dataset per calendar year
-        year_start = storm_data.genesis_time.dt.year.min()
-        year_end = storm_data.genesis_time.dt.year.max()
-        for year in years:
-            # Convert from year to zero indexing for numpy array
-            yrix = year - configs["styr"]
-            if year_start <= year <= year_end:
-                is_year = storm_data.genesis_time.dt.year == year
-                ds_out.py_count[ii, yrix] = (
-                    np.count_nonzero(is_year) / dataset_config["ensmembers"]
+            gendens = (
+                track_density(
+                    storm_data.genesis_lat.data,
+                    storm_data.genesis_lon.data,
+                    denslat,
+                    denslon,
+                    False,
                 )
-                ds_out.py_tcd[ii, yrix] = (
-                    storm_data.total_cyclone_days[is_year].sum()
-                    / dataset_config["ensmembers"]
-                )
-                ds_out.py_ace[ii, yrix] = (
-                    storm_data.accumulated_cyclone_energy[is_year].sum()
-                    / dataset_config["ensmembers"]
-                )
-                ds_out.py_pace[ii, yrix] = (
-                    storm_data.pressure_accumulated_cyclone_energy[is_year].sum()
-                    / dataset_config["ensmembers"]
-                )
-                ds_out.py_lmi[ii, yrix] = storm_data.maximum_intensity_lat[
-                    is_year
-                ].mean()
-                ds_out.py_latgen[ii, yrix] = np.abs(
-                    storm_data.genesis_lat[is_year]
-                ).mean()
-
-        # Calculate annual averages
-        ds_out.uclim_count[ii] = ds_out.pm_count[ii, :].sum()
-        ds_out.uclim_tcd[ii] = storm_data.total_cyclone_days.sum() / nmodyears
-        ds_out.uclim_ace[ii] = storm_data.accumulated_cyclone_energy.sum() / nmodyears
-        ds_out.uclim_pace[ii] = (
-            storm_data.pressure_accumulated_cyclone_energy.sum() / nmodyears
-        )
-        ds_out.uclim_lmi[ii] = ds_out.py_lmi[ii, :].mean()
-
-        # Calculate storm averages
-        ds_out.utc_tcd[ii] = storm_data.total_cyclone_days.mean()
-        ds_out.utc_ace[ii] = storm_data.accumulated_cyclone_energy.mean()
-        ds_out.utc_pace[ii] = storm_data.pressure_accumulated_cyclone_energy.mean()
-        ds_out.utc_lmi[ii] = storm_data.maximum_intensity_lat.mean()
-        ds_out.utc_latgen[ii] = np.abs(storm_data.genesis_lat).mean()
-
-        # Calculate spatial densities, integrals, and min/maxes
-        trackdens = (
-            track_density(tracks.lat.data, tracks.lon.data, denslat, denslon, False)
-            / nmodyears
-        )
-
-        gendens = (
-            track_density(
-                storm_data.genesis_lat.data,
-                storm_data.genesis_lon.data,
-                denslat,
-                denslon,
-                False,
+                / nmodyears
             )
-            / nmodyears
-        )
 
-        tcddens = trackdens * 0.25
+            tcddens = trackdens * 0.25
 
-        acedens = (
-            track_mean(
+            acedens = (
+                track_mean(
+                    tracks.lat.data,
+                    tracks.lon.data,
+                    denslat,
+                    denslon,
+                    tracks.ace.data,
+                    False,
+                    0,
+                )
+                / nmodyears
+            )
+
+            pacedens = (
+                track_mean(
+                    tracks.lat.data,
+                    tracks.lon.data,
+                    denslat,
+                    denslon,
+                    tracks.pace.data,
+                    False,
+                    0,
+                )
+                / nmodyears
+            )
+
+            minpres = track_minmax(
                 tracks.lat.data,
                 tracks.lon.data,
                 denslat,
                 denslon,
-                tracks.ace.data,
-                False,
-                0,
+                tracks.slp.data,
+                min,
             )
-            / nmodyears
-        )
-
-        pacedens = (
-            track_mean(
+            maxwind = track_minmax(
                 tracks.lat.data,
                 tracks.lon.data,
                 denslat,
                 denslon,
-                tracks.pace.data,
-                False,
-                0,
+                tracks.wind.data,
+                max,
             )
-            / nmodyears
-        )
 
-        minpres = track_minmax(
-            tracks.lat.data,
-            tracks.lon.data,
-            denslat,
-            denslon,
-            tracks.slp.data,
-            min,
-        )
-        maxwind = track_minmax(
-            tracks.lat.data,
-            tracks.lon.data,
-            denslat,
-            denslon,
-            tracks.wind.data,
-            max,
-        )
+            # Store this dataset's data in the master spatial array
+            ds_out.fulldens[ii, :, :] = trackdens[:, :]
+            ds_out.fullgen[ii, :, :] = gendens[:, :]
+            ds_out.fullpace[ii, :, :] = pacedens[:, :]
+            ds_out.fullace[ii, :, :] = acedens[:, :]
+            ds_out.fulltcd[ii, :, :] = tcddens[:, :]
+            ds_out.fullpres[ii, :, :] = minpres[:, :]
+            ds_out.fullwind[ii, :, :] = maxwind[:, :]
+            ds_out.fulltrackbias[ii, :, :] = trackdens[:, :] - ds_out.fulldens[0, :, :]
+            ds_out.fullgenbias[ii, :, :] = gendens[:, :] - ds_out.fullgen[0, :, :]
+            ds_out.fullacebias[ii, :, :] = acedens[:, :] - ds_out.fullace[0, :, :]
+            ds_out.fullpacebias[ii, :, :] = pacedens[:, :] - ds_out.fullpace[0, :, :]
 
-        # If there are no storms tracked in this particular dataset, set everything to NaN
-        if np.nansum(trackdens) == 0:
-            trackdens = float("NaN")
-            pacedens = float("NaN")
-            acedens = float("NaN")
-            tcddens = float("NaN")
-            gendens = float("NaN")
-            minpres = float("NaN")
-            maxwind = float("NaN")
-
-        # Store this dataset's data in the master spatial array
-        ds_out.fulldens[ii, :, :] = trackdens[:, :]
-        ds_out.fullgen[ii, :, :] = gendens[:, :]
-        ds_out.fullpace[ii, :, :] = pacedens[:, :]
-        ds_out.fullace[ii, :, :] = acedens[:, :]
-        ds_out.fulltcd[ii, :, :] = tcddens[:, :]
-        ds_out.fullpres[ii, :, :] = minpres[:, :]
-        ds_out.fullwind[ii, :, :] = maxwind[:, :]
-        ds_out.fulltrackbias[ii, :, :] = trackdens[:, :] - ds_out.fulldens[0, :, :]
-        ds_out.fullgenbias[ii, :, :] = gendens[:, :] - ds_out.fullgen[0, :, :]
-        ds_out.fullacebias[ii, :, :] = acedens[:, :] - ds_out.fullace[0, :, :]
-        ds_out.fullpacebias[ii, :, :] = pacedens[:, :] - ds_out.fullpace[0, :, :]
-
-        print("-----------------------------------------------------------------------")
+            print("-------------------------------------------------------------------")
 
     # Back to the main program
     # Spatial correlation calculations
@@ -407,7 +404,10 @@ def get_storm_data(tracks, define_mi_by_pressure):
     # storm_data["total_cyclone_days"] = track_groups.map(
     #     lambda x: ((x.time.max() - x.time.min()) / np.timedelta64(1, "D")
     # )
-    storm_data["total_cyclone_days"] = track_groups.map(lambda x: 0.25 * len(x.time))
+    storm_data["total_cyclone_days"] = (
+        "track_id",
+        np.array([0.25 * len(track.time) for track_id, track in track_groups]),
+    )
 
     return storm_data
 

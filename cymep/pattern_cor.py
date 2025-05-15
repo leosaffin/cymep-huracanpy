@@ -12,7 +12,10 @@ def spatial_correlations(ds, weights):
             x = ds[name][0, :, :].values
             for ii, dataset in enumerate(ds.dataset):
                 y = ds[name][ii, :, :].values
-                correlations.append(wpearsonr(*filter_nans([x, y], [x, y, weights])))
+                try:
+                    correlations.append(wpearsonr(*filter_nans([x, y], [x, y, weights])))
+                except ZeroDivisionError:
+                    correlations.append(0)
 
             rxy_ds[name.replace("full", "rxy_")] = ("dataset", np.array(correlations))
 
