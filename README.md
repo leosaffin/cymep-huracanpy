@@ -133,7 +133,7 @@ datasets:
 ## 2. Run cymep
 
 ```bash
-$> cymep config.yaml
+cymep config.yaml
 ```
 
 This will produce a handful of netCDF files in `cymep-data/{basin}`.
@@ -144,7 +144,7 @@ This will produce a handful of netCDF files in `cymep-data/{basin}`.
 ## 3. Run cymep-graphics
 
 ```bash
-$> cymep-graphics config.yaml
+cymep-graphics config.yaml
 ```
 
 This will produce a suite of figures in various subfolders within `cymep-figs/{basin}`.
