@@ -2,14 +2,13 @@ from argparse import ArgumentParser
 import pathlib
 import yaml
 
-import numpy as np
-import xarray as xr
+from cartopy.crs import EqualEarth, PlateCarree
+from huracanpy import basins
 import matplotlib
 import matplotlib.pyplot as plt
-from cartopy.crs import EqualEarth, PlateCarree
-
-from huracanpy import basins
-
+import numpy as np
+from tqdm import tqdm
+import xarray as xr
 
 transform = PlateCarree()
 
@@ -34,7 +33,7 @@ def generate_plots(configs):
     nsubplots = len(ds.dataset.values)
     nrows, ncols = optimum_layout(nsubplots)
 
-    for var in ds:
+    for var in tqdm(ds):
         if "py_" in var or "pm_" in var:
             if "py_" in var:
                 x = "year"
