@@ -11,10 +11,10 @@ from cymep import cymep
 def test_all():
     # Run cymep using the example data
     os.chdir("example/")
-    # remove_new_files()
-    # with open("example_config.yaml") as f:
-    #     configs = yaml.safe_load(f)
-    # cymep.generate_diagnostics(configs)
+    remove_new_files()
+    with open("example_config.yaml") as f:
+        configs = yaml.safe_load(f)
+    cymep.generate_diagnostics(configs)
 
     # Check that newly generated files all match the old files
     for fname in pathlib.Path("cymep-data/").glob("*_old.nc"):
@@ -30,13 +30,12 @@ def test_all():
             del ds_old.attrs["history"]
             del ds.attrs["history"]
 
-        #xr.testing.assert_identical(ds, ds_old)
         for var in ds:
             print(var)
             if "time" in var:
                 assert (ds[var] == ds_old[var]).all()
             else:
-                np.testing.assert_allclose(ds[var], ds_old[var])
+                np.testing.assert_allclose(ds[var], ds_old[var], rtol=1e-12)
 
         for attr in ds.attrs:
             assert ds.attrs[attr] == ds_old.attrs[attr]

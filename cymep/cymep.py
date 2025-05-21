@@ -148,6 +148,8 @@ def generate_diagnostics(configs):
             tracks,
             configs["do_special_filter_obs"] and ii == 0,
             configs["basin"],
+            configs["start_time"],
+            configs["end_time"],
             months,
             years,
             configs["truncate_years"],

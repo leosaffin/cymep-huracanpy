@@ -1,5 +1,6 @@
-import numpy as np
 import huracanpy
+import numpy as np
+import pandas as pd
 
 
 def fill_missing_pressure_wind(tracks):
@@ -30,7 +31,7 @@ def fill_missing_pressure_wind(tracks):
     )
 
 
-def filter_tracks(tracks, special_filter_obs, basin, months, years, truncate_years):
+def filter_tracks(tracks, special_filter_obs, basin, start_time, end_time, months, years, truncate_years):
     # if "control" record and do_special_filter_obs = true, we can apply specific
     # criteria here to match objective tracks better
     # for example, ibtracs includes tropical depressions, eliminate these to get WMO
@@ -57,6 +58,13 @@ def filter_tracks(tracks, special_filter_obs, basin, months, years, truncate_yea
     valid_times = origin.time.dt.month.isin(months)
     if truncate_years:
         valid_times = valid_times & origin.time.dt.year.isin(years)
+
+    if start_time is not None:
+        valid_times = valid_times & (origin.time >= pd.to_datetime(start_time))
+
+    if end_time is not None:
+        lysis = tracks.hrcn.get_apex_vals("time")
+        valid_times = valid_times & (lysis.time < pd.to_datetime(end_time))
 
     track_ids_to_keep = origin.track_id[valid_times]
     tracks = tracks.hrcn.sel_id(track_ids_to_keep)

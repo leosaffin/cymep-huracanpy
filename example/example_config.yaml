@@ -16,6 +16,15 @@ gridsize: 8.0
 # Extra region around the gridbox used for spatial analysis if focused on a single basin
 grid_buffer: 10.0
 
+# Start time and end time to filter tracks
+# This is done in addition to "truncate_years" (below) if more precise filtering is
+# needed
+# Note that the start_time is ">=" and end time is "<", so you can specify full months
+# more easily (like this example)
+# Leave empty for no filtering
+start_time: 1980-01-01
+end_time: 2020-01-01
+
 # Start and end year for overlapping interannual correlation analysis
 styr: 1980
 enyr: 2019
